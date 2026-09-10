@@ -19,6 +19,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.notesai.data.NoteRepository
+import com.example.notesai.db.DatabaseDriverFactory
+import com.example.notesai.ui.NotesScreen
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -29,26 +32,9 @@ import notesai.shared.generated.resources.compose_multiplatform
 import kotlin.time.Clock
 
 @Composable
-@Preview
-fun App() {
+fun App(driverFactory: DatabaseDriverFactory) {
+    val repository = remember { NoteRepository(driverFactory) }
     MaterialTheme {
-        var text by remember { mutableStateOf("") }
-
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text("Enter text") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        )
+        NotesScreen(repository = repository)
     }
-}
-
-fun todaysDate(): String {
-    fun LocalDateTime.format() = toString().substringBefore('T')
-
-    val now = Clock.System.now()
-    val zone = TimeZone.currentSystemDefault()
-    return now.toLocalDateTime(zone).format()
 }
