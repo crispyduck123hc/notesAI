@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    id("app.cash.sqldelight")
+    alias(libs.plugins.sqldelight)
 }
 
 sqldelight {
@@ -64,10 +64,10 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
-            implementation("app.cash.sqldelight:android-driver:2.3.2")
+            implementation(libs.sqldelight.android.driver)
         }
         commonMain.dependencies {
-            implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
+            implementation(libs.sqldelight.coroutines.extensions)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -79,7 +79,7 @@ kotlin {
             implementation(libs.kotlinx.datetime)
         }
         iosMain.dependencies {
-            implementation("app.cash.sqldelight:native-driver:2.3.2")
+            implementation(libs.sqldelight.native.driver)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -89,7 +89,7 @@ kotlin {
 //            implementation(libs.wrappers.browser)
 //        }
         jvmMain.dependencies {
-            implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
+            implementation(libs.sqldelight.sqlite.driver)
         }
     }
 }
