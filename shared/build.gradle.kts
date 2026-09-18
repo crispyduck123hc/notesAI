@@ -25,6 +25,8 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
+            binaryOption("bundleId", "com.example.notesai.shared")
+            linkerOpts("-lsqlite3")
         }
     }
 
