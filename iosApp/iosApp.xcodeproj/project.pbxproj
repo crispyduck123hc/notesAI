@@ -6,12 +6,17 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D7695145305CF14700819A4E /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D7695144305CF14700819A4E /* libsqlite3.tbd */; settings = {ATTRIBUTES = (Required, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		65DA9BF0538580E5CA8BF512 /* notesAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = notesAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D7695144305CF14700819A4E /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		680C34CDB56B33F383C7078F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		680C34CDB56B33F383C7078F /* Exceptions for "iosApp" folder in "iosApp" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -23,21 +28,13 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		363C539E90741E3FB2A9C7D9 /* Configuration */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
 			path = Configuration;
 			sourceTree = "<group>";
 		};
 		E605D4199B99C3DC05D7088B /* iosApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				680C34CDB56B33F383C7078F /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
+				680C34CDB56B33F383C7078F /* Exceptions for "iosApp" folder in "iosApp" target */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
@@ -49,6 +46,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D7695145305CF14700819A4E /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -60,6 +58,7 @@
 			children = (
 				363C539E90741E3FB2A9C7D9 /* Configuration */,
 				E605D4199B99C3DC05D7088B /* iosApp */,
+				D7695143305CF14700819A4E /* Frameworks */,
 				B476D1F18CECAE5066C9059B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -70,6 +69,14 @@
 				65DA9BF0538580E5CA8BF512 /* notesAI.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D7695143305CF14700819A4E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D7695144305CF14700819A4E /* libsqlite3.tbd */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
