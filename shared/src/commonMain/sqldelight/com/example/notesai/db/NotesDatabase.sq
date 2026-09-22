@@ -10,9 +10,23 @@ CREATE TABLE NoteEntity (
 selectAllNotes:
 SELECT * FROM NoteEntity ORDER BY createdAt DESC;
 
+selectNoteById:
+SELECT * FROM NoteEntity WHERE id = ?;
+
+-- Create: let SQLite assign the id
 insertNote:
-INSERT OR REPLACE INTO NoteEntity(id, title, content, createdAt)
-VALUES (?, ?, ?, ?);
+INSERT INTO NoteEntity(title, content, createdAt)
+VALUES (?, ?, ?);
+
+-- Edit: only the editable fields, createdAt is left untouched
+updateNote:
+UPDATE NoteEntity
+SET title = ?, content = ?
+WHERE id = ?;
+
+-- Id of the row inserted by the most recent INSERT on this connection
+lastInsertRowId:
+SELECT CAST(last_insert_rowid() AS INTEGER) AS id;
 
 deleteNoteById:
 DELETE FROM NoteEntity WHERE id = ?;
