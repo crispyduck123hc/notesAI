@@ -21,28 +21,28 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
             .mapToList(Dispatchers.Default)
     }
 
-    // Observe a single note (used by the editor)
+    // Observe a single note (kept for potential large-note scenarios)
     fun getNote(id: Long): Flow<NoteEntity?> {
         return queries.selectNoteById(id)
             .asFlow()
             .mapToOneOrNull(Dispatchers.Default)
     }
 
-    // Create an empty note and return its generated id
-    fun addNote(title: String = "", content: String = ""): Long {
+    // Create a note from its full text. The first line is stored as the title.
+    fun addNote(text: String = ""): Long {
         return queries.transactionWithResult {
             queries.insertNote(
-                title = title,
-                content = content,
+                title = text.noteTitle(),
+                content = text,
                 createdAt = Clock.System.now().toEpochMilliseconds()
             )
             queries.lastInsertRowId().executeAsOne()
         }
     }
 
-    // Update the editable fields of an existing note; createdAt is preserved
-    fun updateNote(id: Long, title: String, content: String) {
-        queries.updateNote(title = title, content = content, id = id)
+    // Persist the full text. The title column is a derived cache of the first line.
+    fun updateNote(id: Long, text: String) {
+        queries.updateNote(title = text.noteTitle(), content = text, id = id)
     }
 
     // Delete a note
@@ -50,3 +50,8 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
         queries.deleteNoteById(id)
     }
 }
+
+// The first line of the note body, used as the derived title.
+// Shared with the UI so the tab label always matches the editor's first line.
+fun String.noteTitle(): String =
+    lineSequence().firstOrNull().orEmpty().trim()
