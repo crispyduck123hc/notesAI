@@ -1,32 +1,67 @@
--- Table definition
+-- Folders form a tree (adjacency list). parentId NULL == the root folder.
+CREATE TABLE FolderEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    parentId INTEGER REFERENCES FolderEntity(id) ON DELETE CASCADE,
+    sortOrder INTEGER NOT NULL DEFAULT 0
+);
+
+-- Notes live in exactly one folder.
 CREATE TABLE NoteEntity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     content TEXT NOT NULL,
-    createdAt INTEGER NOT NULL
+    createdAt INTEGER NOT NULL,
+    folderId INTEGER NOT NULL REFERENCES FolderEntity(id) ON DELETE CASCADE
 );
 
--- Queries
+-- Folders
+selectAllFolders:
+SELECT * FROM FolderEntity ORDER BY name;
+
+selectChildFolders:
+SELECT * FROM FolderEntity WHERE parentId = ? ORDER BY name;
+
+insertFolder:
+INSERT INTO FolderEntity(name, parentId, sortOrder)
+VALUES (?, ?, 0);
+
+-- The root row has a fixed id so the app can rely on it.
+insertRootFolder:
+INSERT OR IGNORE INTO FolderEntity(id, name, parentId, sortOrder)
+VALUES (1, 'root', NULL, 0);
+
+renameFolder:
+UPDATE FolderEntity SET name = ? WHERE id = ?;
+
+deleteFolderById:
+DELETE FROM FolderEntity WHERE id = ?;
+
+-- Notes
 selectAllNotes:
-SELECT * FROM NoteEntity ORDER BY createdAt DESC;
+SELECT * FROM NoteEntity ORDER BY title;
 
 selectNoteById:
 SELECT * FROM NoteEntity WHERE id = ?;
 
--- Create: let SQLite assign the id
-insertNote:
-INSERT INTO NoteEntity(title, content, createdAt)
-VALUES (?, ?, ?);
+selectNotesInFolder:
+SELECT * FROM NoteEntity WHERE folderId = ? ORDER BY title;
 
--- Edit: only the editable fields, createdAt is left untouched
+insertNote:
+INSERT INTO NoteEntity(title, content, createdAt, folderId)
+VALUES (?, ?, ?, ?);
+
 updateNote:
 UPDATE NoteEntity
 SET title = ?, content = ?
 WHERE id = ?;
 
+deleteNoteById:
+DELETE FROM NoteEntity WHERE id = ?;
+
+deleteNotesInFolder:
+DELETE FROM NoteEntity WHERE folderId = ?;
+
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:
 SELECT CAST(last_insert_rowid() AS INTEGER) AS id;
-
-deleteNoteById:
-DELETE FROM NoteEntity WHERE id = ?;
