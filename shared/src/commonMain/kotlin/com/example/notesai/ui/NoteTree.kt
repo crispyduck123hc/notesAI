@@ -1,12 +1,17 @@
 package com.example.notesai.ui
 
+import androidx.compose.runtime.Immutable
 import com.example.notesai.db.FolderEntity
 import com.example.notesai.db.NoteEntity
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.toImmutableList
 
 /**
  * A single row of the flattened note tree, ready to be rendered by a LazyColumn.
- * Deliberately free of any Compose dependency so it can be unit tested.
+ * Marked [@Immutable] so Compose can skip unchanged rows. The builder functions below
+ * have no Compose dependency beyond the annotation and are unit testable.
  */
+@Immutable
 internal data class NoteTreeItem(
     val id: Long,
     val label: String,
@@ -25,10 +30,10 @@ internal fun buildNoteTree(
     folders: List<FolderEntity>,
     notes: List<NoteEntity>,
     expanded: Set<Long>
-): List<NoteTreeItem> {
+): ImmutableList<NoteTreeItem> {
     val childFolders = folders.groupBy { it.parentId }
     val childNotes = notes.groupBy { it.folderId }
-    val root = folders.firstOrNull { it.parentId == null } ?: return emptyList()
+    val root = folders.firstOrNull { it.parentId == null } ?: return emptyList<NoteTreeItem>().toImmutableList()
     val out = mutableListOf<NoteTreeItem>()
 
     fun addFolder(folder: FolderEntity, depth: Int) {
@@ -63,7 +68,7 @@ internal fun buildNoteTree(
     }
 
     addFolder(root, 0)
-    return out
+    return out.toImmutableList()
 }
 
 /** The folder [id] itself plus all of its descendant folder ids. */

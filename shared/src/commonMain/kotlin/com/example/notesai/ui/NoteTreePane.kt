@@ -17,11 +17,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.collections.immutable.ImmutableList
 
 /** Left pane: creation buttons plus the flattened, expandable note tree. */
 @Composable
 internal fun NoteTreePane(
-    tree: List<NoteTreeItem>,
+    tree: ImmutableList<NoteTreeItem>,
     selectedFolderId: Long,
     selectedNoteId: Long?,
     onToggle: (Long) -> Unit,
