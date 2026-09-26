@@ -17,6 +17,11 @@ sqldelight {
     }
 }
 
+composeCompiler {
+    reportsDestination = layout.buildDirectory.dir("compose-reports")
+    metricsDestination = layout.buildDirectory.dir("compose-metrics")
+}
+
 kotlin {
     listOf(
         iosArm64(),
@@ -70,6 +75,7 @@ kotlin {
         }
         commonMain.dependencies {
             implementation(libs.sqldelight.coroutines.extensions)
+            implementation(libs.kotlinx.collections.immutable)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

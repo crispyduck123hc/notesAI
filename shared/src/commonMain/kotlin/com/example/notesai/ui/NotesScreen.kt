@@ -18,8 +18,8 @@ import com.example.notesai.data.NoteRepository
  */
 @Composable
 fun NotesScreen(repository: NoteRepository) {
-    val folders by repository.getAllFolders().collectAsState(initial = emptyList())
-    val notes by repository.getAllNotes().collectAsState(initial = emptyList())
+    val folders by repository.allFolders.collectAsState(initial = emptyList())
+    val notes by repository.allNotes.collectAsState(initial = emptyList())
 
     var expanded by remember { mutableStateOf(setOf(NoteRepository.ROOT_FOLDER_ID)) }
     var selectedFolderId by remember { mutableStateOf(NoteRepository.ROOT_FOLDER_ID) }

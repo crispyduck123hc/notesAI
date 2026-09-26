@@ -15,18 +15,20 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
     private val database = NotesDatabase(driverFactory.createDriver())
     private val queries = database.notesDatabaseQueries
 
+    // Single, stable Flow instances so `collectAsState` does not tear down and
+    // re-subscribe on every recomposition.
+    val allFolders: Flow<List<FolderEntity>> =
+        queries.selectAllFolders().asFlow().mapToList(Dispatchers.Default)
+
+    val allNotes: Flow<List<NoteEntity>> =
+        queries.selectAllNotes().asFlow().mapToList(Dispatchers.Default)
+
     init {
         // Guarantee the root folder exists on every startup.
         queries.insertRootFolder()
     }
 
     // ---- Folders ----------------------------------------------------------
-
-    fun getAllFolders(): Flow<List<FolderEntity>> {
-        return queries.selectAllFolders()
-            .asFlow()
-            .mapToList(Dispatchers.Default)
-    }
 
     // Create a folder under `parentId` and return its generated id.
     fun addFolder(name: String, parentId: Long = ROOT_FOLDER_ID): Long {
@@ -56,12 +58,6 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
     }
 
     // ---- Notes ------------------------------------------------------------
-
-    fun getAllNotes(): Flow<List<NoteEntity>> {
-        return queries.selectAllNotes()
-            .asFlow()
-            .mapToList(Dispatchers.Default)
-    }
 
     fun getNote(id: Long): Flow<NoteEntity?> {
         return queries.selectNoteById(id)
