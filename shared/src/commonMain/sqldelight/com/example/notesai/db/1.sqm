@@ -1,0 +1,46 @@
+-- 1.sqm : v1 -> v2
+--
+-- Phase 1 of sync prep. Adds cross-device identity and version metadata:
+--   * uuid       - stable, device-independent identity (UUIDv4), backfilled for
+--                  existing rows with SQLite's randomblob().
+--   * updatedAt  - last local mutation time (notes inherit createdAt so they do
+--                  not look "just changed" after upgrading).
+--   * deletedAt  - tombstone; queries and deletes move to soft-delete semantics.
+--   * AppMetadata - key/value table holding this install's deviceId.
+--
+-- Columns are appended in the same order as the `.sq` CREATE TABLE statements so
+-- the migrated schema matches the schema snapshot generated from `.sq`.
+
+ALTER TABLE FolderEntity ADD COLUMN uuid TEXT NOT NULL DEFAULT '';
+UPDATE FolderEntity SET uuid = (
+    lower(
+        substr(hex(randomblob(4)), 1, 8) || '-' ||
+        substr(hex(randomblob(2)), 1, 4) || '-4' ||
+        substr(hex(randomblob(2)), 2, 3) || '-' ||
+        substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2, 3) || '-' ||
+        substr(hex(randomblob(6)), 1, 12)
+    )
+);
+ALTER TABLE FolderEntity ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE FolderEntity ADD COLUMN deletedAt INTEGER;
+CREATE UNIQUE INDEX FolderEntity_uuid ON FolderEntity(uuid);
+
+ALTER TABLE NoteEntity ADD COLUMN uuid TEXT NOT NULL DEFAULT '';
+UPDATE NoteEntity SET uuid = (
+    lower(
+        substr(hex(randomblob(4)), 1, 8) || '-' ||
+        substr(hex(randomblob(2)), 1, 4) || '-4' ||
+        substr(hex(randomblob(2)), 2, 3) || '-' ||
+        substr('89ab', abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)), 2, 3) || '-' ||
+        substr(hex(randomblob(6)), 1, 12)
+    )
+);
+ALTER TABLE NoteEntity ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0;
+UPDATE NoteEntity SET updatedAt = createdAt;
+ALTER TABLE NoteEntity ADD COLUMN deletedAt INTEGER;
+CREATE UNIQUE INDEX NoteEntity_uuid ON NoteEntity(uuid);
+
+CREATE TABLE AppMetadata (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
