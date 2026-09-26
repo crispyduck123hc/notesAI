@@ -13,6 +13,10 @@ sqldelight {
     databases {
         create("NotesDatabase") {
             packageName.set("com.example.notesai.db")
+            // Generated `.db` snapshots of every schema version live here and are
+            // committed. They are what verifyMigrations checks `.sqm` migrations against.
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+            verifyMigrations.set(true)
         }
     }
 }
