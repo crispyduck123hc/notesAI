@@ -4,8 +4,8 @@ The current schema is described by the `.sq` files under
 `com/example/notesai/db/`. Historical schema snapshots live in `databases/<version>.db`
 and are committed to version control.
 
-`NotesDatabase.Schema.version` is derived as `(number of .sqm migration files) + 1`,
-so right now (no migrations) it is `1`.
+`NotesDatabase.Schema.version` is derived as `(number of .sqm migration files) + 1`.
+With the Phase 1 sync-prep migration (`1.sqm`) in place, the current version is **2**.
 
 ## Changing the schema
 

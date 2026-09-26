@@ -1,10 +1,16 @@
 -- Folders form a tree (adjacency list). parentId NULL == the root folder.
+-- `uuid` is the cross-device identity; `updatedAt`/`deletedAt` drive future sync.
 CREATE TABLE FolderEntity (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     parentId INTEGER REFERENCES FolderEntity(id) ON DELETE CASCADE,
-    sortOrder INTEGER NOT NULL DEFAULT 0
+    sortOrder INTEGER NOT NULL DEFAULT 0,
+    uuid TEXT NOT NULL DEFAULT '',
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    deletedAt INTEGER
 );
+
+CREATE UNIQUE INDEX FolderEntity_uuid ON FolderEntity(uuid);
 
 -- Notes live in exactly one folder.
 CREATE TABLE NoteEntity (
@@ -12,55 +18,76 @@ CREATE TABLE NoteEntity (
     title TEXT NOT NULL,
     content TEXT NOT NULL,
     createdAt INTEGER NOT NULL,
-    folderId INTEGER NOT NULL REFERENCES FolderEntity(id) ON DELETE CASCADE
+    folderId INTEGER NOT NULL REFERENCES FolderEntity(id) ON DELETE CASCADE,
+    uuid TEXT NOT NULL DEFAULT '',
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    deletedAt INTEGER
 );
 
--- Folders
+CREATE UNIQUE INDEX NoteEntity_uuid ON NoteEntity(uuid);
+
+-- App-level key/value metadata (e.g. this install's stable deviceId).
+CREATE TABLE AppMetadata (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- ---- Folders --------------------------------------------------------------
+
 selectAllFolders:
-SELECT * FROM FolderEntity ORDER BY name;
+SELECT * FROM FolderEntity WHERE deletedAt IS NULL ORDER BY name;
 
 selectChildFolders:
-SELECT * FROM FolderEntity WHERE parentId = ? ORDER BY name;
+SELECT * FROM FolderEntity WHERE parentId = ? AND deletedAt IS NULL ORDER BY name;
 
 insertFolder:
-INSERT INTO FolderEntity(name, parentId, sortOrder)
-VALUES (?, ?, 0);
+INSERT INTO FolderEntity(name, parentId, sortOrder, uuid, updatedAt)
+VALUES (?, ?, 0, ?, ?);
 
 -- The root row has a fixed id so the app can rely on it.
 insertRootFolder:
-INSERT OR IGNORE INTO FolderEntity(id, name, parentId, sortOrder)
-VALUES (1, 'root', NULL, 0);
+INSERT OR IGNORE INTO FolderEntity(id, name, parentId, sortOrder, uuid, updatedAt)
+VALUES (1, 'root', NULL, 0, ?, ?);
 
 renameFolder:
-UPDATE FolderEntity SET name = ? WHERE id = ?;
+UPDATE FolderEntity SET name = ?, updatedAt = ? WHERE id = ?;
 
-deleteFolderById:
-DELETE FROM FolderEntity WHERE id = ?;
+-- Soft delete (tombstone): the row stays for sync to propagate the deletion.
+softDeleteFolderById:
+UPDATE FolderEntity SET deletedAt = ?, updatedAt = ? WHERE id = ?;
 
--- Notes
+-- ---- Notes ----------------------------------------------------------------
+
 selectAllNotes:
-SELECT * FROM NoteEntity ORDER BY title;
+SELECT * FROM NoteEntity WHERE deletedAt IS NULL ORDER BY title;
 
 selectNoteById:
-SELECT * FROM NoteEntity WHERE id = ?;
+SELECT * FROM NoteEntity WHERE id = ? AND deletedAt IS NULL;
 
 selectNotesInFolder:
-SELECT * FROM NoteEntity WHERE folderId = ? ORDER BY title;
+SELECT * FROM NoteEntity WHERE folderId = ? AND deletedAt IS NULL ORDER BY title;
 
 insertNote:
-INSERT INTO NoteEntity(title, content, createdAt, folderId)
-VALUES (?, ?, ?, ?);
+INSERT INTO NoteEntity(title, content, createdAt, folderId, uuid, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?);
 
 updateNote:
-UPDATE NoteEntity
-SET title = ?, content = ?
-WHERE id = ?;
+UPDATE NoteEntity SET title = ?, content = ?, updatedAt = ? WHERE id = ?;
 
-deleteNoteById:
-DELETE FROM NoteEntity WHERE id = ?;
+-- Soft delete (tombstone): the row stays for sync to propagate the deletion.
+softDeleteNoteById:
+UPDATE NoteEntity SET deletedAt = ?, updatedAt = ? WHERE id = ?;
 
-deleteNotesInFolder:
-DELETE FROM NoteEntity WHERE folderId = ?;
+softDeleteNotesInFolder:
+UPDATE NoteEntity SET deletedAt = ?, updatedAt = ? WHERE folderId = ? AND deletedAt IS NULL;
+
+-- ---- Sync metadata --------------------------------------------------------
+
+selectMetadata:
+SELECT value FROM AppMetadata WHERE key = ?;
+
+upsertMetadata:
+INSERT OR REPLACE INTO AppMetadata(key, value) VALUES (?, ?);
 
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:
