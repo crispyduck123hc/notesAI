@@ -1,0 +1,17 @@
+-- 2.sqm : v2 -> v3
+--
+-- Give existing installs the same fixed root identity that new installs now use.
+--
+-- Previously the root folder was inserted with a freshly generated random uuid on
+-- first launch, so every device had a *different* root uuid. Under a flat,
+-- uuid-based sync that surfaces as multiple roots (the tree is rooted at
+-- `parentId IS NULL`), so the identity has to be constant across devices.
+--
+-- Only one row is touched (the lowest-id parentless folder) so this cannot violate
+-- the unique index on uuid even if a database somehow ended up with several
+-- parentless rows. `updatedAt` is deliberately left alone: this is an identity
+-- correction, not a user edit.
+
+UPDATE FolderEntity
+SET uuid = '00000000-0000-0000-0000-000000000000'
+WHERE id = (SELECT MIN(id) FROM FolderEntity WHERE parentId IS NULL);

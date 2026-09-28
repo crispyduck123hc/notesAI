@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -7,6 +8,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.sqldelight)
+    alias(libs.plugins.kotlinSerialization)
 }
 
 sqldelight {
@@ -24,6 +26,47 @@ sqldelight {
 composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose-reports")
     metricsDestination = layout.buildDirectory.dir("compose-metrics")
+}
+
+// ---- Local OAuth credentials -------------------------------------------------
+// Client ids/secrets are per-machine and must not be committed, so they live in the
+// git-ignored local.properties and are compiled into a generated Kotlin file. Missing
+// values are fine: the project still builds and sign-in reports the missing config.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+val localSecretsDir = layout.buildDirectory.dir("generated/localSecrets/kotlin")
+
+val generateLocalSecrets by tasks.registering {
+    val outputDir = localSecretsDir
+    val values = mapOf(
+        "DESKTOP_CLIENT_ID" to localProperties.getProperty("google.desktop.clientId").orEmpty(),
+        "DESKTOP_CLIENT_SECRET" to localProperties.getProperty("google.desktop.clientSecret").orEmpty(),
+        "IOS_CLIENT_ID" to localProperties.getProperty("google.ios.clientId").orEmpty(),
+        "ANDROID_CLIENT_ID" to localProperties.getProperty("google.android.clientId").orEmpty(),
+    )
+    inputs.properties(values)
+    outputs.dir(outputDir)
+
+    doLast {
+        fun literal(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        val dir = outputDir.get().asFile.resolve("com/example/notesai/auth")
+        dir.mkdirs()
+        dir.resolve("LocalSecrets.kt").writeText(
+            buildString {
+                appendLine("package com.example.notesai.auth")
+                appendLine()
+                appendLine("// Generated from local.properties at build time. Do not edit or commit values.")
+                appendLine("internal object LocalSecrets {")
+                values.forEach { (name, value) ->
+                    appendLine("    const val $name: String = ${literal(value)}")
+                }
+                appendLine("}")
+            },
+        )
+    }
 }
 
 kotlin {
@@ -72,14 +115,21 @@ kotlin {
     }
 
     sourceSets {
+        commonMain {
+            kotlin.srcDir(generateLocalSecrets)
+        }
+
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.sqldelight.android.driver)
+            implementation(libs.ktor.client.okhttp)
         }
         commonMain.dependencies {
             implementation(libs.sqldelight.coroutines.extensions)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.ktor.client.core)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -92,6 +142,7 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.sqldelight.native.driver)
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -102,6 +153,7 @@ kotlin {
 //        }
         jvmMain.dependencies {
             implementation(libs.sqldelight.sqlite.driver)
+            implementation(libs.ktor.client.okhttp)
         }
     }
 }

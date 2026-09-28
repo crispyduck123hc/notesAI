@@ -29,9 +29,18 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
             ?: randomUuid().also { queries.upsertMetadata(DEVICE_ID_KEY, it) }
 
     init {
-        // Guarantee the root folder exists on every startup.
-        queries.insertRootFolder(uuid = randomUuid(), updatedAt = now())
+        // Guarantee the root folder exists on every startup, with the shared,
+        // constant identity every device agrees on.
+        queries.insertRootFolder(uuid = ROOT_FOLDER_UUID, updatedAt = now())
     }
+
+    // ---- App metadata -----------------------------------------------------
+
+    fun metadata(key: String): String? = queries.selectMetadata(key).executeAsOneOrNull()
+
+    fun putMetadata(key: String, value: String) = queries.upsertMetadata(key, value)
+
+    fun removeMetadata(key: String) = queries.deleteMetadata(key)
 
     // ---- Folders ----------------------------------------------------------
 
@@ -80,7 +89,12 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
     }
 
     // Create a note from its full text. The first line is stored as the title.
-    fun addNote(text: String = "", folderId: Long = ROOT_FOLDER_ID): Long {
+    // `conflictOf` is only set when creating a keep-both conflict copy.
+    fun addNote(
+        text: String = "",
+        folderId: Long = ROOT_FOLDER_ID,
+        conflictOf: String? = null
+    ): Long {
         val timestamp = now()
         return queries.transactionWithResult {
             queries.insertNote(
@@ -89,7 +103,8 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
                 createdAt = timestamp,
                 folderId = folderId,
                 uuid = randomUuid(),
-                updatedAt = timestamp
+                updatedAt = timestamp,
+                conflictOf = conflictOf
             )
             queries.lastInsertRowId().executeAsOne()
         }
@@ -107,6 +122,17 @@ class NoteRepository(driverFactory: DatabaseDriverFactory) {
 
     companion object {
         const val ROOT_FOLDER_ID = 1L
+
+        /**
+         * Fixed identity for the root folder, shared by every device.
+         *
+         * The root is inserted on first launch, so it must not be generated randomly
+         * per install: devices would otherwise disagree on the root's uuid and a
+         * uuid-based sync would surface multiple roots. The nil UUID is unreachable by
+         * [randomUuid], which always sets the version/variant bits.
+         */
+        const val ROOT_FOLDER_UUID = "00000000-0000-0000-0000-000000000000"
+
         const val DEVICE_ID_KEY = "deviceId"
     }
 }

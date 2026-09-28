@@ -1,0 +1,55 @@
+-- 3.sqm : v3 -> v4
+--
+-- Adds the durable state the cross-device sync engine will run on. Nothing reads
+-- or writes these yet; they are here so the schema is settled and the local model
+-- can already record intent.
+--
+--   * NoteEntity.conflictOf - points a keep-both conflict copy at the note it
+--     diverged from.
+--   * SyncOutbox            - local changes still needing a push (durable queue).
+--   * SyncBaseline          - last remote revision synced per record (conflict
+--                             detection baseline).
+--   * SyncState             - incremental pull position per backend.
+--   * ConflictInbox         - conflicts awaiting a human decision.
+--
+-- `conflictOf` is appended (nullable, no default) exactly as declared in `.sq` so
+-- the migrated schema matches the generated snapshot.
+
+ALTER TABLE NoteEntity ADD COLUMN conflictOf TEXT;
+
+CREATE TABLE SyncOutbox (
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    enqueuedAt INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    lastError TEXT,
+    PRIMARY KEY (entityType, entityUuid)
+);
+
+CREATE TABLE SyncBaseline (
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    remoteFileId TEXT,
+    remoteRevisionId TEXT,
+    lastSyncedAt INTEGER NOT NULL,
+    PRIMARY KEY (entityType, entityUuid)
+);
+
+CREATE TABLE SyncState (
+    backend TEXT NOT NULL PRIMARY KEY,
+    startPageToken TEXT,
+    lastPulledAt INTEGER
+);
+
+CREATE TABLE ConflictInbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    localRevision TEXT,
+    remoteRevision TEXT,
+    detectedAt INTEGER NOT NULL,
+    resolvedAt INTEGER,
+    resolution TEXT,
+    conflictCopyUuid TEXT
+);

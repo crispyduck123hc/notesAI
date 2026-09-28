@@ -21,7 +21,9 @@ CREATE TABLE NoteEntity (
     folderId INTEGER NOT NULL REFERENCES FolderEntity(id) ON DELETE CASCADE,
     uuid TEXT NOT NULL DEFAULT '',
     updatedAt INTEGER NOT NULL DEFAULT 0,
-    deletedAt INTEGER
+    deletedAt INTEGER,
+    -- Set on keep-both conflict copies: points at the note they diverged from.
+    conflictOf TEXT
 );
 
 CREATE UNIQUE INDEX NoteEntity_uuid ON NoteEntity(uuid);
@@ -30,6 +32,54 @@ CREATE UNIQUE INDEX NoteEntity_uuid ON NoteEntity(uuid);
 CREATE TABLE AppMetadata (
     key TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+-- ---- Sync bookkeeping -----------------------------------------------------
+-- None of these are consumed yet; they are the durable state the sync engine
+-- will read and write. See shared/src/commonMain/sqldelight/README.md.
+
+-- Local changes that still need pushing to the remote (durable outbox).
+-- Keyed by entity so repeated edits coalesce into a single pending push.
+CREATE TABLE SyncOutbox (
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    enqueuedAt INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    lastError TEXT,
+    PRIMARY KEY (entityType, entityUuid)
+);
+
+-- Last remote revision we synced per record; the baseline that makes conflict
+-- detection possible (local changed? remote changed? both?).
+CREATE TABLE SyncBaseline (
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    remoteFileId TEXT,
+    remoteRevisionId TEXT,
+    lastSyncedAt INTEGER NOT NULL,
+    PRIMARY KEY (entityType, entityUuid)
+);
+
+-- Incremental pull position, keyed by backend (e.g. 'google-drive').
+CREATE TABLE SyncState (
+    backend TEXT NOT NULL PRIMARY KEY,
+    startPageToken TEXT,
+    lastPulledAt INTEGER
+);
+
+-- Durable queue of conflicts that need a human decision, so a conflict detected
+-- while the app is closed is never lost.
+CREATE TABLE ConflictInbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entityType TEXT NOT NULL,
+    entityUuid TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    localRevision TEXT,
+    remoteRevision TEXT,
+    detectedAt INTEGER NOT NULL,
+    resolvedAt INTEGER,
+    resolution TEXT,
+    conflictCopyUuid TEXT
 );
 
 -- ---- Folders --------------------------------------------------------------
@@ -44,7 +94,7 @@ insertFolder:
 INSERT INTO FolderEntity(name, parentId, sortOrder, uuid, updatedAt)
 VALUES (?, ?, 0, ?, ?);
 
--- The root row has a fixed id so the app can rely on it.
+-- The root row has a fixed id and a fixed uuid so every device agrees on it.
 insertRootFolder:
 INSERT OR IGNORE INTO FolderEntity(id, name, parentId, sortOrder, uuid, updatedAt)
 VALUES (1, 'root', NULL, 0, ?, ?);
@@ -68,8 +118,8 @@ selectNotesInFolder:
 SELECT * FROM NoteEntity WHERE folderId = ? AND deletedAt IS NULL ORDER BY title;
 
 insertNote:
-INSERT INTO NoteEntity(title, content, createdAt, folderId, uuid, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO NoteEntity(title, content, createdAt, folderId, uuid, updatedAt, conflictOf)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 updateNote:
 UPDATE NoteEntity SET title = ?, content = ?, updatedAt = ? WHERE id = ?;
@@ -81,13 +131,68 @@ UPDATE NoteEntity SET deletedAt = ?, updatedAt = ? WHERE id = ?;
 softDeleteNotesInFolder:
 UPDATE NoteEntity SET deletedAt = ?, updatedAt = ? WHERE folderId = ? AND deletedAt IS NULL;
 
--- ---- Sync metadata --------------------------------------------------------
+-- ---- App metadata ---------------------------------------------------------
 
 selectMetadata:
 SELECT value FROM AppMetadata WHERE key = ?;
 
 upsertMetadata:
 INSERT OR REPLACE INTO AppMetadata(key, value) VALUES (?, ?);
+
+deleteMetadata:
+DELETE FROM AppMetadata WHERE key = ?;
+
+-- ---- Sync: outbox ---------------------------------------------------------
+
+enqueueOutbox:
+INSERT OR REPLACE INTO SyncOutbox(entityType, entityUuid, enqueuedAt, attempts, lastError)
+VALUES (?, ?, ?, 0, NULL);
+
+selectOutbox:
+SELECT * FROM SyncOutbox ORDER BY enqueuedAt;
+
+deleteOutbox:
+DELETE FROM SyncOutbox WHERE entityType = ? AND entityUuid = ?;
+
+recordOutboxAttempt:
+UPDATE SyncOutbox
+SET attempts = attempts + 1, lastError = ?
+WHERE entityType = ? AND entityUuid = ?;
+
+-- ---- Sync: baseline -------------------------------------------------------
+
+upsertBaseline:
+INSERT OR REPLACE INTO SyncBaseline(entityType, entityUuid, remoteFileId, remoteRevisionId, lastSyncedAt)
+VALUES (?, ?, ?, ?, ?);
+
+selectBaseline:
+SELECT * FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
+
+deleteBaseline:
+DELETE FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
+
+-- ---- Sync: pull cursor ----------------------------------------------------
+
+upsertSyncState:
+INSERT OR REPLACE INTO SyncState(backend, startPageToken, lastPulledAt)
+VALUES (?, ?, ?);
+
+selectSyncState:
+SELECT * FROM SyncState WHERE backend = ?;
+
+-- ---- Sync: conflict inbox -------------------------------------------------
+
+insertConflict:
+INSERT INTO ConflictInbox(entityType, entityUuid, kind, localRevision, remoteRevision, detectedAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectUnresolvedConflicts:
+SELECT * FROM ConflictInbox WHERE resolvedAt IS NULL ORDER BY detectedAt;
+
+resolveConflict:
+UPDATE ConflictInbox
+SET resolvedAt = ?, resolution = ?, conflictCopyUuid = ?
+WHERE id = ?;
 
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:
