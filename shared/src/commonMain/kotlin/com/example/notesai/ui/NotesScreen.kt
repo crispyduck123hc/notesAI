@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.NoteRepository
 
 /**
@@ -17,7 +18,11 @@ import com.example.notesai.data.NoteRepository
  * the editor pane. All presentation detail lives in the child composables.
  */
 @Composable
-fun NotesScreen(repository: NoteRepository) {
+fun NotesScreen(
+    repository: NoteRepository,
+    account: AccountInfo,
+    onSignOut: () -> Unit,
+) {
     val folders by repository.allFolders.collectAsState(initial = emptyList())
     val notes by repository.allNotes.collectAsState(initial = emptyList())
 
@@ -34,6 +39,7 @@ fun NotesScreen(repository: NoteRepository) {
             tree = tree,
             selectedFolderId = selectedFolderId,
             selectedNoteId = selectedNoteId,
+            accountEmail = account.email,
             onToggle = { id ->
                 expanded = if (id in expanded) expanded - id else expanded + id
             },
@@ -55,7 +61,8 @@ fun NotesScreen(repository: NoteRepository) {
                 if (selectedNoteId == id) selectedNoteId = null
             },
             onCreateNote = { selectedNoteId = repository.addNote(folderId = selectedFolderId) },
-            onCreateFolder = { showNewFolderDialog = true }
+            onCreateFolder = { showNewFolderDialog = true },
+            onSignOut = onSignOut
         )
 
         VerticalDivider()
