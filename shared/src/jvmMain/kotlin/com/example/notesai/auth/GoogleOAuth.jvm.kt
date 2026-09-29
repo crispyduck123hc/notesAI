@@ -18,7 +18,11 @@ private const val SIGN_IN_TIMEOUT_MILLIS = 5 * 60 * 1000L
  * Desktop OAuth clients may use any loopback port, so the port in [redirectUri] only
  * has to be free locally.
  */
-actual suspend fun authorizeInteractively(authUrl: String, redirectUri: String): String? {
+actual suspend fun authorizeInteractively(
+    authUrl: String,
+    redirectUri: String,
+    expectedState: String,
+): String? {
     val uri = URI(redirectUri)
     val port = if (uri.port != -1) uri.port else 80
     val server = HttpServer.create(InetSocketAddress(LOOPBACK_HOST, port), 0)
@@ -34,17 +38,26 @@ actual suspend fun authorizeInteractively(authUrl: String, redirectUri: String):
             .toMap()
 
         val code = params["code"]
-        val message = if (code != null) {
-            "Signed in. You can close this tab and return to notesAI."
-        } else {
-            "Sign-in failed (${params["error"] ?: "no code"}). You can close this tab."
+        val stateMatches = params["state"] == expectedState
+        val message = when {
+            !stateMatches -> "Sign-in failed (state mismatch). You can close this tab."
+            code != null -> "Signed in. You can close this tab and return to notesAI."
+            else -> "Sign-in failed (${params["error"] ?: "no code"}). You can close this tab."
         }
+
         val body = message.encodeToByteArray()
         exchange.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
         exchange.sendResponseHeaders(200, body.size.toLong())
         exchange.responseBody.use { it.write(body) }
         exchange.close()
-        result.complete(code)
+
+        if (stateMatches) {
+            result.complete(code)
+        } else {
+            result.completeExceptionally(
+                AuthException("OAuth state mismatch: the redirect did not match this request. Sign-in aborted."),
+            )
+        }
     }
 
     server.start()

@@ -5,7 +5,11 @@ package com.example.notesai.auth
  * Info.plist, which lives in the app target rather than shared code. Until that is
  * wired up, the interactive step is explicitly unimplemented.
  */
-actual suspend fun authorizeInteractively(authUrl: String, redirectUri: String): String? =
+actual suspend fun authorizeInteractively(
+    authUrl: String,
+    redirectUri: String,
+    expectedState: String,
+): String? =
     throw NotImplementedError(
         "Interactive Google sign-in is not implemented on iOS yet. " +
             "Register an iOS OAuth client and use ASWebAuthenticationSession for redirect '$redirectUri'.",

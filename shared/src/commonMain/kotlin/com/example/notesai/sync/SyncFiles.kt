@@ -1,5 +1,6 @@
 package com.example.notesai.sync
 
+import com.example.notesai.data.EntityType
 import com.example.notesai.data.noteTitle
 import com.example.notesai.db.FolderEntity
 import com.example.notesai.db.NoteEntity
@@ -31,12 +32,9 @@ const val CURRENT_FORMAT_VERSION = 1
 const val NOTE_FILE_SUFFIX = ".note.json"
 const val FOLDER_FILE_SUFFIX = ".folder.json"
 
-const val ENTITY_TYPE_NOTE = "note"
-const val ENTITY_TYPE_FOLDER = "folder"
-
 @Serializable
 data class NoteFile(
-    val type: String = ENTITY_TYPE_NOTE,
+    val type: String = EntityType.NOTE,
     val formatVersion: Int = CURRENT_FORMAT_VERSION,
     val uuid: String,
     val parentUuid: String,
@@ -49,7 +47,7 @@ data class NoteFile(
 
 @Serializable
 data class FolderFile(
-    val type: String = ENTITY_TYPE_FOLDER,
+    val type: String = EntityType.FOLDER,
     val formatVersion: Int = CURRENT_FORMAT_VERSION,
     val uuid: String,
     /** Null only for the root folder. */

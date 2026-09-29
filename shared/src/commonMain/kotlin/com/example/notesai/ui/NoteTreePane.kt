@@ -30,6 +30,8 @@ internal fun NoteTreePane(
     selectedFolderId: Long,
     selectedNoteId: Long?,
     accountEmail: String?,
+    syncStatus: String?,
+    syncing: Boolean,
     onToggle: (Long) -> Unit,
     onSelectFolder: (Long) -> Unit,
     onSelectNote: (NoteTreeItem) -> Unit,
@@ -37,6 +39,7 @@ internal fun NoteTreePane(
     onDeleteNote: (Long) -> Unit,
     onCreateNote: () -> Unit,
     onCreateFolder: () -> Unit,
+    onSync: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -72,6 +75,26 @@ internal fun NoteTreePane(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider()
+
+        // Sync is manual for now; status reports the last push/pull result.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = syncStatus ?: "Not synced yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onSync, enabled = !syncing) {
+                Text(if (syncing) "Syncing\u2026" else "Sync now")
+            }
+        }
+
         HorizontalDivider()
         Row(
             modifier = Modifier.fillMaxWidth(),

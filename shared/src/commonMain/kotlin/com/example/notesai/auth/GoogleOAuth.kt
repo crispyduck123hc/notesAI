@@ -51,8 +51,15 @@ class AuthException(message: String, cause: Throwable? = null) : Exception(messa
 /**
  * Runs the platform's interactive authorization step and returns the `code` query
  * parameter from the redirect, or null if the user cancelled.
+ *
+ * Implementations must verify that the redirect's `state` equals [expectedState]
+ * (CSRF protection) and fail rather than return a code if it does not.
  */
-expect suspend fun authorizeInteractively(authUrl: String, redirectUri: String): String?
+expect suspend fun authorizeInteractively(
+    authUrl: String,
+    redirectUri: String,
+    expectedState: String,
+): String?
 
 /** Per-platform client id / redirect uri. See the actuals for what to fill in. */
 expect fun defaultOAuthConfig(): GoogleOAuthConfig

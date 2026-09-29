@@ -21,6 +21,9 @@ import com.example.notesai.data.NoteRepository
 fun NotesScreen(
     repository: NoteRepository,
     account: AccountInfo,
+    syncStatus: String?,
+    syncing: Boolean,
+    onSync: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val folders by repository.allFolders.collectAsState(initial = emptyList())
@@ -40,6 +43,9 @@ fun NotesScreen(
             selectedFolderId = selectedFolderId,
             selectedNoteId = selectedNoteId,
             accountEmail = account.email,
+            syncStatus = syncStatus,
+            syncing = syncing,
+            onSync = onSync,
             onToggle = { id ->
                 expanded = if (id in expanded) expanded - id else expanded + id
             },

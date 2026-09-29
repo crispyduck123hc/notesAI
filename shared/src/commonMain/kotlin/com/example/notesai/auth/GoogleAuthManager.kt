@@ -34,7 +34,7 @@ class GoogleAuthManager(
         val state = generateState()
         val authUrl = config.authorizationUrl(state = state, codeChallenge = codeChallengeS256(verifier))
 
-        val code = authorizeInteractively(authUrl, config.redirectUri)
+        val code = authorizeInteractively(authUrl, config.redirectUri, expectedState = state)
             ?: throw AuthException("Sign-in was cancelled")
 
         val response = requestToken(
