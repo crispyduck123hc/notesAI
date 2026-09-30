@@ -202,4 +202,58 @@ class NoteSyncEngineTest {
         assertEquals(0, result.pushed)
         assertEquals(0, result.pulled)
     }
+
+    @Test
+    fun editingAfterDeletingDoesNotThrow() = runBlocking {
+        // The editor flushes pending text when it is disposed, which can land *after* the
+        // note was deleted. Throwing there aborts the recomposition that removes the note
+        // from the UI — which presents as "the deleted note is still on screen".
+        val device = device()
+        val id = device.addNote("draft")
+        device.deleteNote(id)
+
+        device.updateNote(id, "stale editor text")
+
+        assertEquals(0, device.allNotes.first().size)
+    }
+
+    @Test
+    fun rowsThatPredateTheOutboxAreStillPublished() = runBlocking {
+        val remote = InMemoryRemote()
+        val a = device()
+
+        // Simulate data created before sync existed: written straight to the database by
+        // the remote-apply path, so there is no outbox row for either entity.
+        val folderUuid = "11111111-1111-4111-8111-111111111111"
+        a.upsertRemoteFolder(
+            uuid = folderUuid,
+            name = "legacy folder",
+            parentId = NoteRepository.ROOT_FOLDER_ID,
+            updatedAt = 1L,
+            deletedAt = null,
+        )
+        val folderId = a.folderIdByUuid(folderUuid)!!
+        a.upsertRemoteNote(
+            uuid = "22222222-2222-4222-8222-222222222222",
+            title = "legacy note",
+            content = "legacy note",
+            createdAt = 1L,
+            folderId = folderId,
+            updatedAt = 1L,
+            deletedAt = null,
+            conflictOf = null,
+        )
+        assertEquals(0, a.pendingOutbox().size, "nothing is queued for these rows")
+
+        val result = a.sync(remote)
+
+        assertEquals(2, result.pushed, "first sync must publish pre-existing rows")
+        assertEquals(2, remote.size)
+
+        // And another device must place the note inside the folder, not at the root.
+        val b = device()
+        b.sync(remote)
+        val pulled = b.allFolders.first().single { it.name == "legacy folder" }
+        assertEquals(pulled.id, b.allNotes.first().single().folderId)
+    }
 }

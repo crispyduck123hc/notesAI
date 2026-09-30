@@ -3,6 +3,8 @@ package com.example.notesai.sync
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.data.noteTitle
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class SyncResult(
     val pushed: Int,
@@ -49,7 +51,12 @@ class NoteSyncEngine(
     private val remote: SyncRemote,
 ) {
 
-    suspend fun sync(): SyncResult {
+    private val syncMutex = Mutex()
+
+    /** Serialised: two overlapping syncs would fight over the same baselines. */
+    suspend fun sync(): SyncResult = syncMutex.withLock { syncPass() }
+
+    private suspend fun syncPass(): SyncResult {
         val entriesByUuid = remote.list()
             .mapNotNull { entry -> parseFileName(entry.name)?.let { it.uuid to entry } }
             .toMap()
@@ -61,6 +68,7 @@ class NoteSyncEngine(
             .forEach { repository.clearOutbox(it.entityType, it.entityUuid) }
 
         val dirty = repository.pendingOutbox().mapTo(mutableSetOf()) { it.entityUuid }
+        dirty += neverPublished(entriesByUuid)
 
         val decisions = LinkedHashSet<String>()
             .apply {
@@ -109,6 +117,35 @@ class NoteSyncEngine(
     }
 
     // ---- Decide ------------------------------------------------------------
+
+    /**
+     * Rows that exist locally but have never been published: they have no outbox entry
+     * (so they predate the outbox, or were written by the remote-apply path), no
+     * baseline, and nothing with their uuid on the remote.
+     *
+     * Without this the first sync after enabling sync would skip them entirely — and a
+     * note inside a folder that was never published would upload a `parentUuid` no other
+     * device can resolve, which is exactly how notes end up parked at the root.
+     */
+    private fun neverPublished(remoteUuids: Map<String, RemoteEntry>): Set<String> {
+        val baselines = repository.allBaselines()
+            .mapTo(mutableSetOf()) { it.entityType to it.entityUuid }
+
+        return buildSet {
+            repository.allFoldersNow().forEach { folder ->
+                // The root is implicit: its uuid is a constant every device already knows.
+                if (folder.uuid == NoteRepository.ROOT_FOLDER_UUID) return@forEach
+                if ((EntityType.FOLDER to folder.uuid) !in baselines && folder.uuid !in remoteUuids) {
+                    add(folder.uuid)
+                }
+            }
+            repository.allNotesNow().forEach { note ->
+                if ((EntityType.NOTE to note.uuid) !in baselines && note.uuid !in remoteUuids) {
+                    add(note.uuid)
+                }
+            }
+        }
+    }
 
     private fun decide(uuid: String, isDirty: Boolean, remoteEntry: RemoteEntry?): Decision? {
         val folder = repository.folderByUuid(uuid)

@@ -168,6 +168,9 @@ VALUES (?, ?, ?, ?, ?);
 selectBaseline:
 SELECT * FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
 
+selectAllBaselines:
+SELECT * FROM SyncBaseline;
+
 deleteBaseline:
 DELETE FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
 

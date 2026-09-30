@@ -20,11 +20,10 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-private const val DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
-private const val DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
-
-/** The virtual folder Drive exposes to the app for hidden, app-private data. */
 private const val APP_DATA_FOLDER = "appDataFolder"
+
+/** Overridable so tests can point the client at a stand-in server. */
+const val DEFAULT_DRIVE_BASE_URL = "https://www.googleapis.com"
 
 private val driveJson = Json { ignoreUnknownKeys = true }
 
@@ -54,10 +53,13 @@ class DriveException(message: String) : Exception(message)
 class DriveClient(
     private val http: HttpClient,
     private val accessToken: suspend () -> String?,
+    baseUrl: String = DEFAULT_DRIVE_BASE_URL,
 ) {
+    private val filesUrl = "$baseUrl/drive/v3/files"
+    private val uploadUrl = "$baseUrl/upload/drive/v3/files"
 
     suspend fun listAppDataFiles(): List<DriveFile> {
-        val response = http.get(DRIVE_FILES) {
+        val response = http.get(filesUrl) {
             bearer()
             parameter("spaces", APP_DATA_FOLDER)
             parameter("fields", "files(id,name,version,headRevisionId,modifiedTime,md5Checksum)")
@@ -67,7 +69,7 @@ class DriveClient(
     }
 
     suspend fun downloadText(fileId: String): String {
-        val response = http.get("$DRIVE_FILES/$fileId") {
+        val response = http.get("$filesUrl/$fileId") {
             bearer()
             parameter("alt", "media")
         }
@@ -85,7 +87,7 @@ class DriveClient(
         existingFileId: String? = null,
     ): DriveFile {
         val fileId = existingFileId ?: createMetadataOnlyFile(fileName)
-        val response = http.patch("$DRIVE_UPLOAD/$fileId") {
+        val response = http.patch("$uploadUrl/$fileId") {
             bearer()
             parameter("uploadType", "media")
             parameter("fields", "id,name,version,headRevisionId,modifiedTime,md5Checksum")
@@ -96,7 +98,7 @@ class DriveClient(
     }
 
     suspend fun deleteFile(fileId: String) {
-        val response = http.delete("$DRIVE_FILES/$fileId") { bearer() }
+        val response = http.delete("$filesUrl/$fileId") { bearer() }
         response.requireSuccess(allowEmpty = true)
     }
 
@@ -106,7 +108,7 @@ class DriveClient(
      */
     private suspend fun createMetadataOnlyFile(fileName: String): String {
         val metadata = """{"name":${driveJson.encodeToString(fileName)},"parents":["$APP_DATA_FOLDER"]}"""
-        val response = http.post(DRIVE_FILES) {
+        val response = http.post(filesUrl) {
             bearer()
             parameter("fields", "id")
             contentType(ContentType.Application.Json)

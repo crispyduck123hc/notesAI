@@ -25,12 +25,18 @@ import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.NotesScreen
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 
 /**
  * @param tokenStore platform credential storage — see `desktopTokenStore()`,
  *   `AndroidKeystoreTokenStore` and `KeychainTokenStore`.
  */
+@OptIn(FlowPreview::class)
 @Composable
 fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
     val repository = remember { NoteRepository(driverFactory) }
@@ -53,6 +59,44 @@ fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
     LaunchedEffect(auth) {
         account = auth.restore()
         restoring = false
+    }
+
+    // Once signed in — including on a cold start with a fresh database — sync
+    // automatically so a new device populates itself before the user starts editing.
+    LaunchedEffect(account) {
+        if (account == null) return@LaunchedEffect
+        syncing = true
+        try {
+            syncStatus = syncNow(syncEngine, repository)
+        } catch (t: Throwable) {
+            syncStatus = t.message ?: "Sync failed"
+        } finally {
+            syncing = false
+        }
+    }
+
+    // Then keep up: push shortly after the user stops editing, and poll for changes made
+    // on other devices while the app is open. The engine serialises overlapping runs.
+    LaunchedEffect(account) {
+        if (account == null) return@LaunchedEffect
+        merge(
+            repository.localChanges.debounce(EDIT_SYNC_DEBOUNCE_MILLIS),
+            flow {
+                while (true) {
+                    delay(PERIODIC_SYNC_MILLIS)
+                    emit(Unit)
+                }
+            },
+        ).collect {
+            syncing = true
+            try {
+                syncStatus = syncNow(syncEngine, repository)
+            } catch (t: Throwable) {
+                syncStatus = t.message ?: "Sync failed"
+            } finally {
+                syncing = false
+            }
+        }
     }
 
     MaterialTheme {
@@ -130,3 +174,9 @@ private suspend fun syncNow(engine: NoteSyncEngine, repository: NoteRepository):
         if (pending > 0) append(". $pending conflict(s) need a decision")
     }
 }
+
+/** How long to wait after the last local edit before pushing. */
+private const val EDIT_SYNC_DEBOUNCE_MILLIS = 3_000L
+
+/** How often to poll for changes made on other devices while the app is open. */
+private const val PERIODIC_SYNC_MILLIS = 60_000L

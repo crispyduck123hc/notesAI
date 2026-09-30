@@ -13,6 +13,8 @@ import com.example.notesai.db.SyncBaseline
 import com.example.notesai.db.SyncOutbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlin.time.Clock
 
 class NoteRepository(driver: SqlDriver) {
@@ -29,6 +31,15 @@ class NoteRepository(driver: SqlDriver) {
 
     val allNotes: Flow<List<NoteEntity>> =
         queries.selectAllNotes().asFlow().mapToList(Dispatchers.Default)
+
+    private val _localChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
+
+    /**
+     * Emits whenever a local change is queued for sync, so the UI can push shortly after
+     * the user stops typing. Changes applied *from* the remote deliberately do not emit:
+     * a pull must never trigger a push.
+     */
+    val localChanges: Flow<Unit> = _localChanges.asSharedFlow()
 
     /** Stable identifier for this install, persisted on first use. Consumed by sync. */
     val deviceId: String =
@@ -65,7 +76,7 @@ class NoteRepository(driver: SqlDriver) {
 
     fun renameFolder(id: Long, name: String) {
         queries.transaction {
-            val uuid = queries.selectFolderById(id).executeAsOne().uuid
+            val uuid = queries.selectFolderById(id).executeAsOneOrNull()?.uuid ?: return@transaction
             queries.renameFolder(name = name, updatedAt = now(), id = id)
             markDirty(EntityType.FOLDER, uuid)
         }
@@ -130,7 +141,10 @@ class NoteRepository(driver: SqlDriver) {
 
     fun updateNote(id: Long, text: String) {
         queries.transaction {
-            val uuid = queries.selectNoteById(id).executeAsOne().uuid
+            // The editor flushes pending text when it is disposed, which can land after the
+            // note was deleted. Make that a no-op: throwing here aborts the recomposition
+            // that removes the note from the UI.
+            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
             queries.updateNote(title = text.noteTitle(), content = text, updatedAt = now(), id = id)
             markDirty(EntityType.NOTE, uuid)
         }
@@ -139,13 +153,20 @@ class NoteRepository(driver: SqlDriver) {
     fun deleteNote(id: Long) {
         val timestamp = now()
         queries.transaction {
-            val uuid = queries.selectNoteById(id).executeAsOne().uuid
+            // Already deleted (double click, or a stale row in the tree): nothing to do.
+            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
             queries.softDeleteNoteById(deletedAt = timestamp, updatedAt = timestamp, id = id)
             markDirty(EntityType.NOTE, uuid)
         }
     }
 
     // ---- Sync: lookups ----------------------------------------------------
+
+    fun allFoldersNow(): List<FolderEntity> = queries.selectAllFolders().executeAsList()
+
+    fun allNotesNow(): List<NoteEntity> = queries.selectAllNotes().executeAsList()
+
+    fun allBaselines(): List<SyncBaseline> = queries.selectAllBaselines().executeAsList()
 
     fun noteByUuid(uuid: String): NoteEntity? =
         queries.selectNoteByUuid(uuid).executeAsOneOrNull()
@@ -166,8 +187,10 @@ class NoteRepository(driver: SqlDriver) {
     fun clearOutbox(entityType: String, entityUuid: String) =
         queries.deleteOutbox(entityType = entityType, entityUuid = entityUuid)
 
-    private fun markDirty(entityType: String, entityUuid: String) =
+    private fun markDirty(entityType: String, entityUuid: String) {
         queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = now())
+        _localChanges.tryEmit(Unit)
+    }
 
     // ---- Sync: baseline ---------------------------------------------------
 
