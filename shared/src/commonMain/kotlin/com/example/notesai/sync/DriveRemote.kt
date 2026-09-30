@@ -18,6 +18,8 @@ class DriveRemote(private val drive: DriveClient) : SyncRemote {
 
     override suspend fun update(fileId: String, content: String): RemoteEntry =
         drive.uploadText(fileName = "", content = content, existingFileId = fileId).toEntry()
+
+    override suspend fun delete(fileId: String) = drive.deleteFile(fileId)
 }
 
 private fun DriveFile.toEntry() = RemoteEntry(fileId = id, name = name.orEmpty(), version = versionToken())

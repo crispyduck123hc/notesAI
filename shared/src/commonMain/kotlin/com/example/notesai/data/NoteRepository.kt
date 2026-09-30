@@ -41,6 +41,10 @@ class NoteRepository(driver: SqlDriver) {
      */
     val localChanges: Flow<Unit> = _localChanges.asSharedFlow()
 
+    /** Unresolved conflicts, for the review UI. */
+    val conflicts: Flow<List<ConflictInbox>> =
+        queries.selectUnresolvedConflicts().asFlow().mapToList(Dispatchers.Default)
+
     /** Stable identifier for this install, persisted on first use. Consumed by sync. */
     val deviceId: String =
         queries.selectMetadata(DEVICE_ID_KEY).executeAsOneOrNull()
@@ -243,6 +247,57 @@ class NoteRepository(driver: SqlDriver) {
                     )
                 }
             }
+        }
+    }
+
+    fun conflictById(id: Long): ConflictInbox? =
+        queries.selectConflictById(id).executeAsOneOrNull()
+
+    fun resolveConflictRow(id: Long, resolution: String) = queries.resolveConflict(
+        resolvedAt = now(),
+        resolution = resolution,
+        conflictCopyUuid = null,
+        id = id,
+    )
+
+    // ---- Sync: tombstones / GC -------------------------------------------
+
+    /** Tombstoned records deleted before [threshold], with their remote file if published. */
+    fun tombstonesOlderThan(threshold: Long): List<Tombstone> = buildList {
+        queries.selectPurgeableNotes(threshold).executeAsList().forEach { note ->
+            add(Tombstone(EntityType.NOTE, note.uuid, baseline(EntityType.NOTE, note.uuid)?.remoteFileId))
+        }
+        queries.selectPurgeableFolders(threshold).executeAsList().forEach { folder ->
+            if (folder.uuid == ROOT_FOLDER_UUID) return@forEach
+            add(Tombstone(EntityType.FOLDER, folder.uuid, baseline(EntityType.FOLDER, folder.uuid)?.remoteFileId))
+        }
+    }
+
+    fun hasOutboxEntry(entityType: String, entityUuid: String): Boolean =
+        queries.selectOutboxEntry(entityType, entityUuid).executeAsOneOrNull() != null
+
+    /** Forgets a tombstone locally: row, outbox entry and baseline all go. */
+    fun purgeLocal(entityType: String, entityUuid: String) {
+        queries.transaction {
+            when (entityType) {
+                EntityType.FOLDER -> queries.deleteFolderByUuid(entityUuid)
+                else -> queries.deleteNoteByUuid(entityUuid)
+            }
+            queries.deleteOutbox(entityType = entityType, entityUuid = entityUuid)
+            queries.deleteBaseline(entityType = entityType, entityUuid = entityUuid)
+        }
+    }
+
+    fun clearBaseline(entityType: String, entityUuid: String) =
+        queries.deleteBaseline(entityType = entityType, entityUuid = entityUuid)
+
+    // ---- Notes: moving ----------------------------------------------------
+
+    fun moveNote(id: Long, folderId: Long) {
+        queries.transaction {
+            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
+            queries.moveNote(folderId = folderId, updatedAt = now(), id = id)
+            markDirty(EntityType.NOTE, uuid)
         }
     }
 

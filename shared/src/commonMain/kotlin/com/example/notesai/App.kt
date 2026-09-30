@@ -144,6 +144,17 @@ fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
                         }
                     }
                 },
+                onResolveConflict = { id, keepLocal ->
+                    scope.launch {
+                        try {
+                            syncEngine.resolveConflict(id, keepLocal)
+                            // Reconcile straight away so the resolution reaches the remote.
+                            syncStatus = syncNow(syncEngine, repository)
+                        } catch (t: Throwable) {
+                            syncStatus = t.message ?: "Could not resolve conflict"
+                        }
+                    }
+                },
                 onSignOut = {
                     auth.signOut()
                     account = null

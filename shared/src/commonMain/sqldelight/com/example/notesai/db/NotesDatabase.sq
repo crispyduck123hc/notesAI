@@ -173,7 +173,6 @@ SELECT * FROM SyncBaseline;
 
 deleteBaseline:
 DELETE FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
-
 -- ---- Sync: pull cursor ----------------------------------------------------
 
 upsertSyncState:
@@ -234,6 +233,29 @@ SELECT * FROM ConflictInbox
 WHERE entityType = ? AND entityUuid = ? AND resolvedAt IS NULL
 ORDER BY detectedAt DESC
 LIMIT 1;
+
+selectConflictById:
+SELECT * FROM ConflictInbox WHERE id = ?;
+
+-- ---- Tombstone GC ---------------------------------------------------------
+
+selectPurgeableNotes:
+SELECT * FROM NoteEntity WHERE deletedAt IS NOT NULL AND deletedAt < ?;
+
+selectPurgeableFolders:
+SELECT * FROM FolderEntity WHERE deletedAt IS NOT NULL AND deletedAt < ?;
+
+deleteNoteByUuid:
+DELETE FROM NoteEntity WHERE uuid = ?;
+
+deleteFolderByUuid:
+DELETE FROM FolderEntity WHERE uuid = ?;
+
+selectOutboxEntry:
+SELECT * FROM SyncOutbox WHERE entityType = ? AND entityUuid = ?;
+
+moveNote:
+UPDATE NoteEntity SET folderId = ?, updatedAt = ? WHERE id = ?;
 
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:

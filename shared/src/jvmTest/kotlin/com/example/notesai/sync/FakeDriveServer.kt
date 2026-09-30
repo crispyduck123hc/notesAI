@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
  * token, and the `files` list envelope — can be exercised without OAuth credentials or a
  * live Google account.
  */
-class FakeDriveServer {
+class FakeDriveServer(private val maxPageSize: Int = Int.MAX_VALUE) {
 
     private data class Stored(val name: String, val content: String, val version: Long)
 
@@ -49,7 +49,7 @@ class FakeDriveServer {
         when {
             path == "/drive/v3/files" && method == "GET" -> {
                 listCalls++
-                respond(exchange, 200, listJson())
+                respond(exchange, 200, listJson(query))
             }
 
             path == "/drive/v3/files" && method == "POST" ->
@@ -91,13 +91,23 @@ class FakeDriveServer {
         return fileJson(fileId, files.getValue(fileId))
     }
 
-    private fun listJson(): String = buildString {
-        append("""{"files":[""")
-        files.entries.forEachIndexed { index, (id, file) ->
-            if (index > 0) append(',')
-            append(fileJson(id, file))
+    private fun listJson(query: String): String {
+        val requested = PAGE_SIZE_PATTERN.find(query)?.groupValues?.get(1)?.toIntOrNull() ?: maxPageSize
+        val size = minOf(requested, maxPageSize)
+        val offset = PAGE_TOKEN_PATTERN.find(query)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val page = files.entries.drop(offset).take(size)
+        val nextOffset = offset + page.size
+
+        return buildString {
+            append("""{"files":[""")
+            page.forEachIndexed { index, (id, file) ->
+                if (index > 0) append(',')
+                append(fileJson(id, file))
+            }
+            append(']')
+            if (nextOffset < files.size) append(""","nextPageToken":"$nextOffset"""")
+            append('}')
         }
-        append("]}")
     }
 
     /** `version` is a JSON number, matching the real Drive resource. */
@@ -118,5 +128,7 @@ class FakeDriveServer {
 
     private companion object {
         val NAME_PATTERN = Regex("\"name\"\\s*:\\s*\"([^\"]+)\"")
+        val PAGE_SIZE_PATTERN = Regex("pageSize=(\\d+)")
+        val PAGE_TOKEN_PATTERN = Regex("pageToken=(\\d+)")
     }
 }

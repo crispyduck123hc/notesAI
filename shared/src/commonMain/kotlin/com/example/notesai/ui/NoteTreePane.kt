@@ -23,7 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.collections.immutable.ImmutableList
 
-/** Left pane: creation buttons, the flattened note tree, and the signed-in account. */
+/** Left pane: creation buttons, the flattened note tree, sync state and the account. */
 @Composable
 internal fun NoteTreePane(
     tree: ImmutableList<NoteTreeItem>,
@@ -32,14 +32,18 @@ internal fun NoteTreePane(
     accountEmail: String?,
     syncStatus: String?,
     syncing: Boolean,
+    conflictCount: Int,
     onToggle: (Long) -> Unit,
     onSelectFolder: (Long) -> Unit,
     onSelectNote: (NoteTreeItem) -> Unit,
     onDeleteFolder: (Long) -> Unit,
     onDeleteNote: (Long) -> Unit,
+    onRenameFolder: (Long) -> Unit,
+    onMoveNote: (Long) -> Unit,
     onCreateNote: () -> Unit,
     onCreateFolder: () -> Unit,
     onSync: () -> Unit,
+    onReviewConflicts: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -69,7 +73,9 @@ internal fun NoteTreePane(
                     onToggle = { onToggle(item.id) },
                     onClick = { if (item.isFolder) onSelectFolder(item.id) else onSelectNote(item) },
                     onDelete = { if (item.isFolder) onDeleteFolder(item.id) else onDeleteNote(item.id) },
-                    deletable = !(item.isFolder && item.depth == 0) // never delete root
+                    onRename = if (item.isFolder) ({ onRenameFolder(item.id) }) else null,
+                    onMove = if (item.isFolder) null else ({ onMoveNote(item.id) }),
+                    deletable = !(item.isFolder && item.depth == 0), // never delete root
                 )
             }
         }
@@ -77,7 +83,8 @@ internal fun NoteTreePane(
         Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider()
 
-        // Sync is manual for now; status reports the last push/pull result.
+        // Sync state. Manual for now, but the app also syncs on start, after edits and
+        // periodically, so this is mostly a report.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -92,6 +99,18 @@ internal fun NoteTreePane(
             )
             TextButton(onClick = onSync, enabled = !syncing) {
                 Text(if (syncing) "Syncing\u2026" else "Sync now")
+            }
+        }
+
+        if (conflictCount > 0) {
+            TextButton(
+                onClick = onReviewConflicts,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = if (conflictCount == 1) "1 conflict needs a decision" else "$conflictCount conflicts need a decision",
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
 

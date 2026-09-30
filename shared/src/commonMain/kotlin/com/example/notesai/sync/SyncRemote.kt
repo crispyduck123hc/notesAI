@@ -24,4 +24,7 @@ interface SyncRemote {
 
     /** Replaces the contents of an existing file and returns its new identity. */
     suspend fun update(fileId: String, content: String): RemoteEntry
+
+    /** Removes a file outright. Only tombstone GC should call this. */
+    suspend fun delete(fileId: String)
 }

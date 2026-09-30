@@ -1,12 +1,14 @@
 package com.example.notesai.sync
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.db.NotesDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class NoteSyncEngineTest {
@@ -255,5 +257,114 @@ class NoteSyncEngineTest {
         b.sync(remote)
         val pulled = b.allFolders.first().single { it.name == "legacy folder" }
         assertEquals(pulled.id, b.allNotes.first().single().folderId)
+    }
+
+    // ---- tombstone GC ------------------------------------------------------
+
+    @Test
+    fun tombstonesPastRetentionArePurgedLocallyAndRemotely() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        val noteId = device.addNote("temporary")
+        val uuid = device.allNotes.first().single().uuid
+        device.sync(remote)
+        assertEquals(1, remote.size)
+
+        device.deleteNote(noteId)
+        device.sync(remote)
+        assertEquals(1, remote.size, "a tombstone is a file, not a deletion")
+
+        val deletedAt = device.noteByUuid(uuid)!!.deletedAt!!
+        // Still inside the window: nothing is forgotten.
+        assertEquals(
+            0,
+            NoteSyncEngine(device, remote).purgeExpiredTombstones(
+                retentionMillis = 1_000,
+                nowMillis = deletedAt + 500,
+            ),
+        )
+
+        // Past the window: row, remote file and baseline all go.
+        assertEquals(
+            1,
+            NoteSyncEngine(device, remote).purgeExpiredTombstones(
+                retentionMillis = 1_000,
+                nowMillis = deletedAt + 2_000,
+            ),
+        )
+        assertNull(device.noteByUuid(uuid))
+        assertNull(device.baseline(EntityType.NOTE, uuid))
+        assertEquals(0, remote.size)
+    }
+
+    @Test
+    fun deletionsThatWereNeverPushedAreNotForgotten() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        val noteId = device.addNote("temporary")
+        val uuid = device.allNotes.first().single().uuid
+
+        device.deleteNote(noteId) // queued, but never pushed
+
+        val purged = NoteSyncEngine(device, remote).purgeExpiredTombstones(
+            retentionMillis = 0,
+            nowMillis = Long.MAX_VALUE,
+        )
+
+        assertEquals(0, purged, "an unpushed deletion must not be forgotten")
+        assertEquals(1, device.pendingOutbox().size)
+    }
+
+    // ---- resolving parked conflicts ---------------------------------------
+
+    @Test
+    fun resolvingADeleteVsEditInFavourOfTheEditResurrectsTheNote() = runBlocking {
+        val conflict = parkedDeleteVsEdit()
+
+        assertTrue(NoteSyncEngine(conflict.b, conflict.remote).resolveConflict(conflict.id, keepLocal = false))
+
+        assertEquals(0, conflict.b.unresolvedConflicts().size)
+        assertEquals(1, conflict.b.allNotes.first().size, "adopting the remote edit brings the note back")
+    }
+
+    @Test
+    fun resolvingADeleteVsEditInFavourOfTheDeletionPropagatesIt() = runBlocking {
+        val conflict = parkedDeleteVsEdit()
+
+        assertTrue(NoteSyncEngine(conflict.b, conflict.remote).resolveConflict(conflict.id, keepLocal = true))
+
+        assertEquals(0, conflict.b.unresolvedConflicts().size)
+        assertEquals(0, conflict.b.allNotes.first().size, "the local deletion stands")
+
+        // ...and the other device learns about it on its next sync.
+        NoteSyncEngine(conflict.a, conflict.remote).sync()
+        assertEquals(0, conflict.a.allNotes.first().size)
+    }
+
+    private class ParkedConflict(
+        val a: NoteRepository,
+        val b: NoteRepository,
+        val remote: InMemoryRemote,
+        val id: Long,
+    )
+
+    /** Device A edits while device B deletes the same note, then B syncs to park it. */
+    private suspend fun parkedDeleteVsEdit(): ParkedConflict {
+        val remote = InMemoryRemote()
+        val a = device()
+        val noteIdA = a.addNote("note")
+        a.sync(remote)
+
+        val b = device()
+        b.sync(remote)
+        val noteIdB = b.allNotes.first().single().id
+
+        a.updateNote(noteIdA, "note\nedited on A")
+        a.sync(remote)
+
+        b.deleteNote(noteIdB)
+        b.sync(remote)
+
+        return ParkedConflict(a, b, remote, b.unresolvedConflicts().single().id)
     }
 }

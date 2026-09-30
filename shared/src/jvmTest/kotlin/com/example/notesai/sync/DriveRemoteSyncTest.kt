@@ -76,6 +76,28 @@ class DriveRemoteSyncTest {
     }
 
     @Test
+    fun listingFollowsDrivePaging() = runBlocking {
+        // Page size 2 with 5 notes: a client that ignores nextPageToken would only ever see
+        // two of them, and would then re-upload the rest as if they were new.
+        val server = FakeDriveServer(maxPageSize = 2)
+        val http = HttpClient()
+        try {
+            val a = device()
+            repeat(5) { index -> a.addNote("note $index") }
+            assertEquals(5, NoteSyncEngine(a, remote(http, server)).sync().pushed)
+            assertEquals(5, server.fileCount)
+
+            val b = device()
+            NoteSyncEngine(b, remote(http, server)).sync()
+            assertEquals(5, b.allNotes.first().size, "every page must be followed")
+            assertTrue(server.listCalls >= 3, "expected multiple pages, got ${server.listCalls}")
+        } finally {
+            http.close()
+            server.stop()
+        }
+    }
+
+    @Test
     fun preExistingRowsArePublishedOverHttp() = runBlocking {
         val server = FakeDriveServer()
         val http = HttpClient()

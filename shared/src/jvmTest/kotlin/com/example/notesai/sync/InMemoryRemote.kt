@@ -32,6 +32,10 @@ class InMemoryRemote : SyncRemote {
         return RemoteEntry(fileId, existing.name, version.toString())
     }
 
+    override suspend fun delete(fileId: String) {
+        files.remove(fileId)
+    }
+
     // ---- helpers for simulating a second device without a second database ----
 
     fun fileIdFor(name: String): String? = files.entries.firstOrNull { it.value.name == name }?.key

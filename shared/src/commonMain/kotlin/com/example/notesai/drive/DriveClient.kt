@@ -25,6 +25,8 @@ private const val APP_DATA_FOLDER = "appDataFolder"
 /** Overridable so tests can point the client at a stand-in server. */
 const val DEFAULT_DRIVE_BASE_URL = "https://www.googleapis.com"
 
+private const val PAGE_SIZE = 1000
+
 private val driveJson = Json { ignoreUnknownKeys = true }
 
 /** Subset of the Drive v3 `File` resource that the sync layer needs. */
@@ -40,7 +42,10 @@ data class DriveFile(
 )
 
 @Serializable
-private data class DriveFileList(val files: List<DriveFile> = emptyList())
+private data class DrivePage(
+    val files: List<DriveFile> = emptyList(),
+    val nextPageToken: String? = null,
+)
 
 class DriveException(message: String) : Exception(message)
 
@@ -59,13 +64,23 @@ class DriveClient(
     private val uploadUrl = "$baseUrl/upload/drive/v3/files"
 
     suspend fun listAppDataFiles(): List<DriveFile> {
-        val response = http.get(filesUrl) {
-            bearer()
-            parameter("spaces", APP_DATA_FOLDER)
-            parameter("fields", "files(id,name,version,headRevisionId,modifiedTime,md5Checksum)")
-            parameter("pageSize", 1000)
-        }
-        return driveJson.decodeFromString<DriveFileList>(response.requireSuccess()).files
+        val all = mutableListOf<DriveFile>()
+        var pageToken: String? = null
+        // Paging matters: a truncated listing makes remote files look absent, which would
+        // silently strand data (and, with tombstone GC, could look like a deletion).
+        do {
+            val response = http.get(filesUrl) {
+                bearer()
+                parameter("spaces", APP_DATA_FOLDER)
+                parameter("fields", "nextPageToken,files(id,name,version,headRevisionId,modifiedTime,md5Checksum)")
+                parameter("pageSize", PAGE_SIZE)
+                pageToken?.let { parameter("pageToken", it) }
+            }
+            val page = driveJson.decodeFromString<DrivePage>(response.requireSuccess())
+            all += page.files
+            pageToken = page.nextPageToken
+        } while (pageToken != null)
+        return all
     }
 
     suspend fun downloadText(fileId: String): String {
