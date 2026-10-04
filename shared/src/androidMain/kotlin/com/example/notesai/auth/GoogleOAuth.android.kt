@@ -5,7 +5,11 @@ package com.example.notesai.auth
  * redirect scheme, which lives in the app module rather than shared code. Until that
  * is wired up, the interactive step is explicitly unimplemented.
  */
-actual suspend fun authorizeInteractively(authUrl: String, redirectUri: String): String? =
+actual suspend fun authorizeInteractively(
+    authUrl: String,
+    redirectUri: String,
+    expectedState: String,
+): String? =
     throw NotImplementedError(
         "Interactive Google sign-in is not implemented on Android yet. " +
             "Register an Android OAuth client and handle the callback for redirect '$redirectUri'.",

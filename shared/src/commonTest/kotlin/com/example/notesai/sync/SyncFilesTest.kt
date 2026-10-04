@@ -1,5 +1,6 @@
 package com.example.notesai.sync
 
+import com.example.notesai.data.EntityType
 import com.example.notesai.db.FolderEntity
 import com.example.notesai.db.NoteEntity
 import kotlin.test.Test
@@ -54,7 +55,7 @@ class SyncFilesTest {
         val text = note.toNoteFile(parentUuid = "parent-uuid").encode()
         val decoded = decodeNoteFile(text)
 
-        assertEquals(ENTITY_TYPE_NOTE, decoded.type)
+        assertEquals(EntityType.NOTE, decoded.type)
         assertEquals(CURRENT_FORMAT_VERSION, decoded.formatVersion)
         // Null fields are written explicitly so identical state is byte-identical.
         assertTrue(text.contains("\"deletedAt\": null"), text)

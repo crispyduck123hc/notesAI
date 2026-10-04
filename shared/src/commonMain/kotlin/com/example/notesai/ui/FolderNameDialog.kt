@@ -10,35 +10,38 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
-/** Modal dialog used to name a newly created folder. */
+/** Names a folder — used for both creating and renaming. */
 @Composable
-internal fun NewFolderDialog(
+fun FolderNameDialog(
+    title: String,
+    confirmLabel: String,
+    initialValue: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String) -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by remember(initialValue) { mutableStateOf(initialValue) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New folder") },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Name") },
-                singleLine = true
+                singleLine = true,
             )
         },
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(name.trim()) },
-                enabled = name.isNotBlank()
+                enabled = name.isNotBlank(),
             ) {
-                Text("Create")
+                Text(confirmLabel)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
+        },
     )
 }

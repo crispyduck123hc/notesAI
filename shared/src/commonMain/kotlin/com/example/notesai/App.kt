@@ -15,27 +15,37 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GoogleAuthManager
-import com.example.notesai.auth.MetadataTokenStore
+import com.example.notesai.auth.TokenStore
 import com.example.notesai.auth.defaultOAuthConfig
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.db.DatabaseDriverFactory
+import com.example.notesai.drive.DriveClient
+import com.example.notesai.sync.DriveRemote
+import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.NotesScreen
+import io.ktor.client.HttpClient
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 
+/**
+ * @param tokenStore platform credential storage — see `desktopTokenStore()`,
+ *   `AndroidKeystoreTokenStore` and `KeychainTokenStore`.
+ */
+@OptIn(FlowPreview::class)
 @Composable
-fun App(driverFactory: DatabaseDriverFactory) {
+fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
     val repository = remember { NoteRepository(driverFactory) }
-    val auth = remember(repository) {
-        GoogleAuthManager(
-            config = defaultOAuthConfig(),
-            store = MetadataTokenStore(
-                read = repository::metadata,
-                write = repository::putMetadata,
-                remove = repository::removeMetadata,
-            ),
-        )
+    val http = remember { HttpClient() }
+    val auth = remember(http, tokenStore) {
+        GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
     }
+    val drive = remember(http, auth) { DriveClient(http, auth::accessToken) }
+    val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
     val scope = rememberCoroutineScope()
 
     var account by remember { mutableStateOf<AccountInfo?>(null) }
@@ -43,9 +53,50 @@ fun App(driverFactory: DatabaseDriverFactory) {
     var signingIn by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    var syncStatus by remember { mutableStateOf<String?>(null) }
+    var syncing by remember { mutableStateOf(false) }
+
     LaunchedEffect(auth) {
         account = auth.restore()
         restoring = false
+    }
+
+    // Once signed in — including on a cold start with a fresh database — sync
+    // automatically so a new device populates itself before the user starts editing.
+    LaunchedEffect(account) {
+        if (account == null) return@LaunchedEffect
+        syncing = true
+        try {
+            syncStatus = syncNow(syncEngine, repository)
+        } catch (t: Throwable) {
+            syncStatus = t.message ?: "Sync failed"
+        } finally {
+            syncing = false
+        }
+    }
+
+    // Then keep up: push shortly after the user stops editing, and poll for changes made
+    // on other devices while the app is open. The engine serialises overlapping runs.
+    LaunchedEffect(account) {
+        if (account == null) return@LaunchedEffect
+        merge(
+            repository.localChanges.debounce(EDIT_SYNC_DEBOUNCE_MILLIS),
+            flow {
+                while (true) {
+                    delay(PERIODIC_SYNC_MILLIS)
+                    emit(Unit)
+                }
+            },
+        ).collect {
+            syncing = true
+            try {
+                syncStatus = syncNow(syncEngine, repository)
+            } catch (t: Throwable) {
+                syncStatus = t.message ?: "Sync failed"
+            } finally {
+                syncing = false
+            }
+        }
     }
 
     MaterialTheme {
@@ -78,11 +129,65 @@ fun App(driverFactory: DatabaseDriverFactory) {
             else -> NotesScreen(
                 repository = repository,
                 account = account!!,
+                syncStatus = syncStatus,
+                syncing = syncing,
+                onSync = {
+                    syncing = true
+                    syncStatus = null
+                    scope.launch {
+                        try {
+                            syncStatus = syncNow(syncEngine, repository)
+                        } catch (t: Throwable) {
+                            syncStatus = t.message ?: "Sync failed"
+                        } finally {
+                            syncing = false
+                        }
+                    }
+                },
+                onResolveConflict = { id, keepLocal ->
+                    scope.launch {
+                        try {
+                            syncEngine.resolveConflict(id, keepLocal)
+                            // Reconcile straight away so the resolution reaches the remote.
+                            syncStatus = syncNow(syncEngine, repository)
+                        } catch (t: Throwable) {
+                            syncStatus = t.message ?: "Could not resolve conflict"
+                        }
+                    }
+                },
                 onSignOut = {
                     auth.signOut()
                     account = null
+                    syncStatus = null
                 },
             )
         }
     }
 }
+
+/**
+ * Runs one push/pull pass and reports what happened. Sync is manual for now; a
+ * background/on-focus trigger is the next step once the engine has been exercised.
+ */
+private suspend fun syncNow(engine: NoteSyncEngine, repository: NoteRepository): String {
+    val result = engine.sync()
+    val pending = repository.unresolvedConflicts().size
+
+    return buildString {
+        if (!result.changed && pending == 0) {
+            append("Up to date")
+        } else {
+            append("Synced — pushed ${result.pushed}, pulled ${result.pulled}")
+            if (result.conflictsResolved > 0) {
+                append(", kept both for ${result.conflictsResolved} edit conflict(s)")
+            }
+        }
+        if (pending > 0) append(". $pending conflict(s) need a decision")
+    }
+}
+
+/** How long to wait after the last local edit before pushing. */
+private const val EDIT_SYNC_DEBOUNCE_MILLIS = 3_000L
+
+/** How often to poll for changes made on other devices while the app is open. */
+private const val PERIODIC_SYNC_MILLIS = 60_000L

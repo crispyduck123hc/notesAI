@@ -168,9 +168,11 @@ VALUES (?, ?, ?, ?, ?);
 selectBaseline:
 SELECT * FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
 
+selectAllBaselines:
+SELECT * FROM SyncBaseline;
+
 deleteBaseline:
 DELETE FROM SyncBaseline WHERE entityType = ? AND entityUuid = ?;
-
 -- ---- Sync: pull cursor ----------------------------------------------------
 
 upsertSyncState:
@@ -193,6 +195,67 @@ resolveConflict:
 UPDATE ConflictInbox
 SET resolvedAt = ?, resolution = ?, conflictCopyUuid = ?
 WHERE id = ?;
+
+-- ---- Sync support --------------------------------------------------------
+
+-- Lookups by uuid (remote events reference uuids, never local row ids).
+selectFolderById:
+SELECT * FROM FolderEntity WHERE id = ?;
+
+selectFolderByUuid:
+SELECT * FROM FolderEntity WHERE uuid = ?;
+
+selectNoteByUuid:
+SELECT * FROM NoteEntity WHERE uuid = ?;
+
+-- Upserts used when applying a remote change. Unlike the local mutation queries
+-- these never enqueue outbox work: the change already exists remotely.
+insertNoteFromRemote:
+INSERT INTO NoteEntity(uuid, title, content, createdAt, folderId, updatedAt, deletedAt, conflictOf)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+updateNoteFromRemote:
+UPDATE NoteEntity
+SET title = ?, content = ?, createdAt = ?, folderId = ?, updatedAt = ?, deletedAt = ?, conflictOf = ?
+WHERE uuid = ?;
+
+insertFolderFromRemote:
+INSERT INTO FolderEntity(uuid, name, parentId, sortOrder, updatedAt, deletedAt)
+VALUES (?, ?, ?, 0, ?, ?);
+
+updateFolderFromRemote:
+UPDATE FolderEntity
+SET name = ?, parentId = ?, updatedAt = ?, deletedAt = ?
+WHERE uuid = ?;
+
+selectUnresolvedConflict:
+SELECT * FROM ConflictInbox
+WHERE entityType = ? AND entityUuid = ? AND resolvedAt IS NULL
+ORDER BY detectedAt DESC
+LIMIT 1;
+
+selectConflictById:
+SELECT * FROM ConflictInbox WHERE id = ?;
+
+-- ---- Tombstone GC ---------------------------------------------------------
+
+selectPurgeableNotes:
+SELECT * FROM NoteEntity WHERE deletedAt IS NOT NULL AND deletedAt < ?;
+
+selectPurgeableFolders:
+SELECT * FROM FolderEntity WHERE deletedAt IS NOT NULL AND deletedAt < ?;
+
+deleteNoteByUuid:
+DELETE FROM NoteEntity WHERE uuid = ?;
+
+deleteFolderByUuid:
+DELETE FROM FolderEntity WHERE uuid = ?;
+
+selectOutboxEntry:
+SELECT * FROM SyncOutbox WHERE entityType = ? AND entityUuid = ?;
+
+moveNote:
+UPDATE NoteEntity SET folderId = ?, updatedAt = ? WHERE id = ?;
 
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:
