@@ -35,7 +35,6 @@ CREATE TABLE AppMetadata (
 );
 
 -- ---- Sync bookkeeping -----------------------------------------------------
--- None of these are consumed yet; they are the durable state the sync engine
 -- will read and write. See shared/src/commonMain/sqldelight/README.md.
 
 -- Local changes that still need pushing to the remote (durable outbox).

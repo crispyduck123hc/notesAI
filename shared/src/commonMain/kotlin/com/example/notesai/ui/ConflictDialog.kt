@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+import com.example.notesai.ui.theme.Dimens
+
 /** One parked conflict, already resolved to something displayable. */
 data class ConflictUiItem(
     val id: Long,
@@ -43,7 +45,7 @@ fun ConflictDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (items.size == 1) "1 conflict" else "${items.size} conflicts") },
         text = {
-            Column(modifier = Modifier.widthIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+            Column(modifier = Modifier.widthIn(max = Dimens.DialogMaxWidth).verticalScroll(rememberScrollState())) {
                 items.forEachIndexed { index, item ->
                     if (index > 0) {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -79,12 +81,18 @@ private fun describe(item: ConflictUiItem): String = when (item.kind) {
         "Edited here, deleted on another device."
     }
 
-    "folder-conflict" -> "Changed here and on another device."
+    "remote-missing" -> "Exists on this device but no longer on the server."
     else -> "Changed here and on another device."
 }
 
-private fun localLabel(item: ConflictUiItem): String =
-    if (item.kind == "delete-vs-edit" && item.localIsDeletion) "Keep deletion" else "Keep mine"
+private fun localLabel(item: ConflictUiItem): String = when {
+    item.kind == "remote-missing" -> "Upload it"
+    item.kind == "delete-vs-edit" && item.localIsDeletion -> "Keep deletion"
+    else -> "Keep mine"
+}
 
-private fun remoteLabel(item: ConflictUiItem): String =
-    if (item.kind == "delete-vs-edit" && !item.localIsDeletion) "Keep deletion" else "Keep theirs"
+private fun remoteLabel(item: ConflictUiItem): String = when {
+    item.kind == "remote-missing" -> "Delete it here"
+    item.kind == "delete-vs-edit" && !item.localIsDeletion -> "Keep deletion"
+    else -> "Keep theirs"
+}

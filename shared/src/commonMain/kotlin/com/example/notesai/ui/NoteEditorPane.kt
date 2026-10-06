@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notesai.db.NoteEntity
+import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -81,7 +82,7 @@ internal fun NoteEditorPane(
         placeholder = { Text("First line becomes the title\u2026") },
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(Dimens.EditorPadding)
     )
 }
 

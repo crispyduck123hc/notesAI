@@ -9,6 +9,9 @@ class InMemoryRemote : SyncRemote {
     private var nextId = 1
     private var nextVersion = 1
 
+    /** File names whose uploads should fail, to exercise per-record failure isolation. */
+    val failOn = mutableSetOf<String>()
+
     /** Total number of files the remote holds (including tombstones). */
     val size: Int get() = files.size
 
@@ -19,6 +22,7 @@ class InMemoryRemote : SyncRemote {
         files[fileId]?.content ?: error("no remote file with id $fileId")
 
     override suspend fun create(name: String, content: String): RemoteEntry {
+        if (name in failOn) error("simulated upload failure for $name")
         val id = "file-${nextId++}"
         val version = nextVersion++
         files[id] = Stored(name, content, version)
@@ -27,6 +31,7 @@ class InMemoryRemote : SyncRemote {
 
     override suspend fun update(fileId: String, content: String): RemoteEntry {
         val existing = files[fileId] ?: error("no remote file with id $fileId")
+        if (existing.name in failOn) error("simulated upload failure for ${existing.name}")
         val version = nextVersion++
         files[fileId] = existing.copy(content = content, version = version)
         return RemoteEntry(fileId, existing.name, version.toString())

@@ -26,6 +26,7 @@ import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.notesai.ui.theme.Dimens
 
 /**
  * One row of the tree: an indentation-guide chevron (folders only), the label, a delete
@@ -55,10 +56,10 @@ internal fun NoteTreeRow(
                 )
                 .clickable(onClick = onClick)
                 .onSecondaryClick { menuOpen = true }
-                .padding(start = (8 + item.depth * 16).dp),
+                .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * item.depth),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(modifier = Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.width(Dimens.TreeChevronWidth), contentAlignment = Alignment.Center) {
                 if (item.isFolder && item.expandable) {
                     Text(
                         text = if (item.expanded) "\u25BE" else "\u25B8",
