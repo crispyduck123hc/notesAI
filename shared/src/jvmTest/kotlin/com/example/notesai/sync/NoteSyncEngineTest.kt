@@ -341,6 +341,209 @@ class NoteSyncEngineTest {
         assertEquals(0, conflict.a.allNotes.first().size)
     }
 
+    // ---- a remote file that vanished (i.e. after GC) -----------------------
+
+    @Test
+    fun aVanishedRemoteFileBecomesAQuestionRatherThanASilentDeletion() = runBlocking {
+        val remote = InMemoryRemote()
+        val a = device()
+        val noteId = a.addNote("shared note")
+        a.sync(remote)
+
+        val b = device()
+        b.sync(remote)
+        assertEquals(1, b.allNotes.first().size)
+
+        // A deletes it and pushes the tombstone; GC then removes the file altogether. This is
+        // the state a device that has been offline past the retention window wakes up to.
+        val uuid = a.allNotes.first().single().uuid
+        a.deleteNote(noteId)
+        a.sync(remote)
+        val deletedAt = a.noteByUuid(uuid)!!.deletedAt!!
+        NoteSyncEngine(a, remote).purgeExpiredTombstones(
+            retentionMillis = 1_000,
+            nowMillis = deletedAt + 2_000,
+        )
+        assertEquals(0, remote.size, "GC removed the file")
+
+        val result = NoteSyncEngine(b, remote).sync()
+
+        assertEquals(1, result.conflictsPending)
+        assertEquals("remote-missing", b.unresolvedConflicts().single().kind)
+        // Crucially: nothing was deleted from B on the strength of an absence.
+        assertEquals(1, b.allNotes.first().size)
+    }
+
+    @Test
+    fun resolvingAVanishedRemoteFileByKeepingLocalRepublishesTheNote() = runBlocking {
+        val (b, remote, conflictId) = vanishedRemoteFile()
+
+        assertTrue(NoteSyncEngine(b, remote).resolveConflict(conflictId, keepLocal = true))
+
+        assertEquals(1, remote.size, "the note is uploaded again")
+        assertEquals(1, b.allNotes.first().size)
+        assertEquals(0, b.unresolvedConflicts().size)
+    }
+
+    @Test
+    fun resolvingAVanishedRemoteFileByKeepingRemoteDeletesLocally() = runBlocking {
+        val (b, remote, conflictId) = vanishedRemoteFile()
+
+        assertTrue(NoteSyncEngine(b, remote).resolveConflict(conflictId, keepLocal = false))
+
+        assertEquals(0, remote.size)
+        assertEquals(0, b.allNotes.first().size, "the deletion stands")
+        assertEquals(0, b.unresolvedConflicts().size)
+    }
+
+    /** A device holding a note whose remote copy has been removed by GC. */
+    private suspend fun vanishedRemoteFile(): Triple<NoteRepository, InMemoryRemote, Long> {
+        val remote = InMemoryRemote()
+        val a = device()
+        val noteId = a.addNote("shared note")
+        a.sync(remote)
+
+        val b = device()
+        b.sync(remote)
+
+        val uuid = a.allNotes.first().single().uuid
+        a.deleteNote(noteId)
+        a.sync(remote)
+        val deletedAt = a.noteByUuid(uuid)!!.deletedAt!!
+        NoteSyncEngine(a, remote).purgeExpiredTombstones(1_000, deletedAt + 2_000)
+
+        NoteSyncEngine(b, remote).sync()
+        return Triple(b, remote, b.unresolvedConflicts().single().id)
+    }
+
+    // ---- failure isolation -------------------------------------------------
+
+    @Test
+    fun oneFailingRecordDoesNotAbortTheWholeSync() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        device.addNote("first")
+        device.addNote("second")
+        device.addNote("third")
+
+        val secondUuid = device.allNotesNow().first { it.title == "second" }.uuid
+        remote.failOn += noteFileName(secondUuid)
+
+        val result = NoteSyncEngine(device, remote).sync()
+
+        assertEquals(2, result.pushed, "the other two still went up")
+        assertEquals(1, result.failed)
+        assertEquals(2, remote.size)
+
+        // The failure is recorded against that record alone, and it stays queued for a retry.
+        val stuck = device.pendingOutbox().single()
+        assertEquals(secondUuid, stuck.entityUuid)
+        assertEquals(1L, stuck.attempts)
+        assertTrue((stuck.lastError ?: "").contains("simulated upload failure"), stuck.lastError ?: "")
+    }
+
+    // ---- not-every-write-is-an-edit ---------------------------------------
+
+    @Test
+    fun rewritingTheSameContentIsNotAnEdit() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        val id = device.addNote("hello")
+        device.sync(remote)
+        val before = device.noteById(id)!!
+
+        device.updateNote(id, "hello")
+
+        assertEquals(0, device.pendingOutbox().size, "an unchanged write must not queue a push")
+        assertEquals(before.updatedAt, device.noteById(id)!!.updatedAt, "...nor bump the version stamp")
+    }
+
+    @Test
+    fun renamingOrMovingToTheSamePlaceIsNotAnEdit() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        val folderId = device.addFolder("work")
+        val noteId = device.addNote("hello", folderId)
+        device.sync(remote)
+
+        val folder = device.allFoldersNow().first { it.name == "work" }
+        device.renameFolder(folder.id, "work")
+        device.moveNote(noteId, folderId)
+
+        assertEquals(0, device.pendingOutbox().size)
+    }
+
+    /**
+     * The regression that mattered: an editor flushes its buffer when it is disposed, so
+     * merely *opening* a note and moving away wrote it back. If that counts as an edit, two
+     * devices alternate pushes, each seeing the other's write as a remote change — and when
+     * both are dirty at once, that is a conflict, which keep-both resolves by making a copy.
+     * So an unchanged flush used to multiply the note.
+     */
+    @Test
+    fun twoDevicesOpeningTheSameNoteDoNotReplicateIt() = runBlocking {
+        val remote = InMemoryRemote()
+        val a = device()
+        a.addNote("shared")
+        a.sync(remote)
+
+        val b = device()
+        b.sync(remote)
+
+        repeat(3) {
+            // Opening a note, then leaving it: the buffer flush with unchanged text.
+            a.allNotes.first().forEach { a.updateNote(it.id, it.content) }
+            b.allNotes.first().forEach { b.updateNote(it.id, it.content) }
+            NoteSyncEngine(a, remote).sync()
+            NoteSyncEngine(b, remote).sync()
+        }
+
+        assertEquals(1, remote.size, "the note must not be duplicated")
+        assertEquals(1, a.allNotes.first().size)
+        assertEquals(1, b.allNotes.first().size)
+        assertEquals(0, a.unresolvedConflicts().size)
+        assertEquals(0, b.unresolvedConflicts().size)
+    }
+
+    // ---- push cadence ------------------------------------------------------
+
+    @Test
+    fun aFreshEditIsHeldBackUntilTheSettleWindowPasses() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        device.addNote("draft")
+
+        val held = NoteSyncEngine(device, remote).sync(pushSettleMillis = 10_000)
+
+        assertEquals(0, held.pushed, "a just-made edit should not be pushed immediately")
+        assertEquals(0, remote.size)
+        assertEquals(1, device.pendingOutbox().size, "but it must stay queued")
+
+        val settled = NoteSyncEngine(device, remote).sync(pushSettleMillis = 0)
+        assertEquals(1, settled.pushed)
+        assertEquals(1, remote.size)
+    }
+
+    @Test
+    fun neverPublishedRowsIgnoreTheSettleWindow() = runBlocking {
+        val remote = InMemoryRemote()
+        val device = device()
+        // Rows that predate the outbox have no `enqueuedAt` to wait on, so a settle window
+        // must not strand them.
+        device.upsertRemoteNote(
+            uuid = "55555555-5555-4555-8555-555555555555",
+            title = "legacy",
+            content = "legacy",
+            createdAt = 1L,
+            folderId = NoteRepository.ROOT_FOLDER_ID,
+            updatedAt = 1L,
+            deletedAt = null,
+            conflictOf = null,
+        )
+
+        assertEquals(1, NoteSyncEngine(device, remote).sync(pushSettleMillis = 60_000).pushed)
+    }
+
     private class ParkedConflict(
         val a: NoteRepository,
         val b: NoteRepository,
