@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.notesai.ui.theme.Dimens
 import kotlinx.collections.immutable.ImmutableList
 
 /** Left pane: creation buttons, the flattened note tree, sync state and the account. */
@@ -48,9 +49,9 @@ internal fun NoteTreePane(
 ) {
     Column(
         modifier = Modifier
-            .width(280.dp)
+            .width(Dimens.TreePaneWidth)
             .fillMaxHeight()
-            .padding(8.dp)
+            .padding(Dimens.Gutter)
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onCreateNote, modifier = Modifier.weight(1f)) {
@@ -62,7 +63,7 @@ internal fun NoteTreePane(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(Dimens.Gutter))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(tree, key = { if (it.isFolder) "f${it.id}" else "n${it.id}" }) { item ->
@@ -80,7 +81,7 @@ internal fun NoteTreePane(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(Dimens.Gutter))
         HorizontalDivider()
 
         // Sync state. Manual for now, but the app also syncs on start, after edits and

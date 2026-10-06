@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.notesai.db.FolderEntity
+import com.example.notesai.ui.theme.Dimens
 
 /** Picks a destination folder for a note. */
 @Composable
@@ -37,7 +38,7 @@ fun MoveNoteDialog(
             } else {
                 Column(
                     modifier = Modifier
-                        .widthIn(max = 360.dp)
+                        .widthIn(max = Dimens.DialogMaxWidth)
                         .verticalScroll(rememberScrollState()),
                 ) {
                     destinations.forEach { folder ->

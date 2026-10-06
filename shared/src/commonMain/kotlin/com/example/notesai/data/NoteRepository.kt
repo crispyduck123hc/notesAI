@@ -13,13 +13,15 @@ import com.example.notesai.db.SyncBaseline
 import com.example.notesai.db.SyncOutbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlin.time.Clock
 
-class NoteRepository(driver: SqlDriver) {
-    /** Convenience for production callers; tests construct this with an in-memory driver. */
-    constructor(driverFactory: DatabaseDriverFactory) : this(driverFactory.createDriver())
+class NoteRepository(private val driver: SqlDriver) {
+    /**
+     * Production constructor. The database name is per-account (see [accountDatabaseName]),
+     * so signing in as a different account opens an entirely different local store.
+     */
+    constructor(driverFactory: DatabaseDriverFactory, databaseName: String) :
+        this(driverFactory.createDriver(databaseName))
 
     private val database = NotesDatabase(driver)
     private val queries = database.notesDatabaseQueries
@@ -32,16 +34,9 @@ class NoteRepository(driver: SqlDriver) {
     val allNotes: Flow<List<NoteEntity>> =
         queries.selectAllNotes().asFlow().mapToList(Dispatchers.Default)
 
-    private val _localChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
-
     /**
-     * Emits whenever a local change is queued for sync, so the UI can push shortly after
-     * the user stops typing. Changes applied *from* the remote deliberately do not emit:
-     * a pull must never trigger a push.
+     * Unresolved conflicts, for the review UI.
      */
-    val localChanges: Flow<Unit> = _localChanges.asSharedFlow()
-
-    /** Unresolved conflicts, for the review UI. */
     val conflicts: Flow<List<ConflictInbox>> =
         queries.selectUnresolvedConflicts().asFlow().mapToList(Dispatchers.Default)
 
@@ -64,7 +59,43 @@ class NoteRepository(driver: SqlDriver) {
 
     fun removeMetadata(key: String) = queries.deleteMetadata(key)
 
+    /** Releases the underlying connection. A repository is single-account and single-use. */
+    fun close() = driver.close()
+
+    /**
+     * Which account this database was opened for, recorded on first use. Used as a tripwire:
+     * if the signed-in account ever disagrees with the database, sync is refused rather than
+     * mixing two people's notes.
+     */
+    fun storedAccountScope(): String? = metadata(ACCOUNT_SCOPE_KEY)
+
+    fun recordAccountScope(scope: String) {
+        if (storedAccountScope() == null) putMetadata(ACCOUNT_SCOPE_KEY, scope)
+    }
+
     // ---- Folders ----------------------------------------------------------
+
+    /**
+     * Runs a local mutation and records it as dirty in the same transaction, so an edit can
+     * never exist without a matching push.
+     *
+     * The uuid is resolved *before* the mutation, because a delete can make the row
+     * unfetchable afterwards. If the row isn't found the whole thing is a no-op.
+     *
+     * Note that `addFolder`/`addNote` deliberately do *not* use this: they need the generated
+     * row id, and it must be read before `markDirty` writes the outbox row, because
+     * `last_insert_rowid()` is connection-wide and the outbox insert would clobber it.
+     */
+    private fun <T> mutate(
+        entityType: String,
+        uuidOf: () -> String?,
+        block: () -> T,
+    ): T? = queries.transactionWithResult {
+        val uuid = uuidOf() ?: return@transactionWithResult null
+        val result = block()
+        markDirty(entityType, uuid)
+        result
+    }
 
     fun addFolder(name: String, parentId: Long = ROOT_FOLDER_ID): Long {
         return queries.transactionWithResult {
@@ -79,10 +110,11 @@ class NoteRepository(driver: SqlDriver) {
     }
 
     fun renameFolder(id: Long, name: String) {
-        queries.transaction {
-            val uuid = queries.selectFolderById(id).executeAsOneOrNull()?.uuid ?: return@transaction
+        val existing = queries.selectFolderById(id).executeAsOneOrNull() ?: return
+        if (existing.name == name) return
+
+        mutate(entityType = EntityType.FOLDER, uuidOf = { existing.uuid }) {
             queries.renameFolder(name = name, updatedAt = now(), id = id)
-            markDirty(EntityType.FOLDER, uuid)
         }
     }
 
@@ -144,23 +176,29 @@ class NoteRepository(driver: SqlDriver) {
     }
 
     fun updateNote(id: Long, text: String) {
-        queries.transaction {
-            // The editor flushes pending text when it is disposed, which can land after the
-            // note was deleted. Make that a no-op: throwing here aborts the recomposition
-            // that removes the note from the UI.
-            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
-            queries.updateNote(title = text.noteTitle(), content = text, updatedAt = now(), id = id)
-            markDirty(EntityType.NOTE, uuid)
+        val existing = queries.selectNoteById(id).executeAsOneOrNull() ?: return
+        val title = text.noteTitle()
+
+        // Editors flush their buffer when they are disposed, so this is called even when
+        // nothing was typed. Treating that as an edit is what made two devices push at each
+        // other indefinitely: the write bumped `updatedAt`, which looked like a remote change
+        // to the other device, which then wrote it back — and when both were dirty at once
+        // that became a conflict, which keep-both resolved by making another copy.
+        if (existing.content == text && existing.title == title) return
+
+        mutate(entityType = EntityType.NOTE, uuidOf = { existing.uuid }) {
+            queries.updateNote(title = title, content = text, updatedAt = now(), id = id)
         }
     }
 
     fun deleteNote(id: Long) {
         val timestamp = now()
-        queries.transaction {
+        mutate(
+            entityType = EntityType.NOTE,
             // Already deleted (double click, or a stale row in the tree): nothing to do.
-            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
+            uuidOf = { queries.selectNoteById(id).executeAsOneOrNull()?.uuid },
+        ) {
             queries.softDeleteNoteById(deletedAt = timestamp, updatedAt = timestamp, id = id)
-            markDirty(EntityType.NOTE, uuid)
         }
     }
 
@@ -193,7 +231,6 @@ class NoteRepository(driver: SqlDriver) {
 
     private fun markDirty(entityType: String, entityUuid: String) {
         queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = now())
-        _localChanges.tryEmit(Unit)
     }
 
     // ---- Sync: baseline ---------------------------------------------------
@@ -294,15 +331,27 @@ class NoteRepository(driver: SqlDriver) {
     // ---- Notes: moving ----------------------------------------------------
 
     fun moveNote(id: Long, folderId: Long) {
-        queries.transaction {
-            val uuid = queries.selectNoteById(id).executeAsOneOrNull()?.uuid ?: return@transaction
+        val existing = queries.selectNoteById(id).executeAsOneOrNull() ?: return
+        if (existing.folderId == folderId) return
+
+        mutate(entityType = EntityType.NOTE, uuidOf = { existing.uuid }) {
             queries.moveNote(folderId = folderId, updatedAt = now(), id = id)
-            markDirty(EntityType.NOTE, uuid)
         }
     }
 
     fun hasUnresolvedConflict(entityType: String, entityUuid: String): Boolean =
         queries.selectUnresolvedConflict(entityType, entityUuid).executeAsOneOrNull() != null
+
+    /**
+     * Records a failed push against that record. The queue entry stays, so the next sync
+     * retries — the counter is there to make "this keeps failing" visible rather than silent.
+     */
+    fun recordOutboxAttempt(entityType: String, entityUuid: String, error: String?) =
+        queries.recordOutboxAttempt(
+            lastError = error,
+            entityType = entityType,
+            entityUuid = entityUuid,
+        )
 
     fun unresolvedConflicts(): List<ConflictInbox> =
         queries.selectUnresolvedConflicts().executeAsList()
@@ -389,6 +438,9 @@ class NoteRepository(driver: SqlDriver) {
         const val ROOT_FOLDER_UUID = "00000000-0000-0000-0000-000000000000"
 
         const val DEVICE_ID_KEY = "deviceId"
+
+        /** Records which account owns this per-account database. */
+        const val ACCOUNT_SCOPE_KEY = "account.scope"
     }
 }
 

@@ -3,6 +3,7 @@ package com.example.notesai.sync
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.data.noteTitle
+import com.example.notesai.db.SyncBaseline
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -11,12 +12,12 @@ import kotlin.time.Clock
  * How long a tombstone survives before GC forgets it.
  *
  * This is a trade-off, not a tuning detail. Purged tombstones are deleted locally *and*
- * remotely, so a device that has been offline for longer than this window will keep a
- * phantom copy of a note deleted elsewhere — we deliberately treat "remote file missing"
- * as "not our business" rather than inferring a deletion, because a wrong inference there
- * would delete data wholesale. Raise this if devices go away for months.
+ * remotely, so a device that has been offline for longer than this window no longer has
+ * anything to compare against. That used to leave a silent phantom copy; now it surfaces as
+ * a `remote-missing` question the user can answer (see the reconcile path below), which is
+ * why the window can be generous rather than tight.
  */
-const val TOMBSTONE_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000
+const val TOMBSTONE_RETENTION_MILLIS = 30L * 24 * 60 * 60 * 1000
 
 data class SyncResult(
     val pushed: Int,
@@ -24,11 +25,13 @@ data class SyncResult(
     val conflictsResolved: Int,
     val conflictsPending: Int,
     val purged: Int = 0,
+    val failed: Int = 0,
 ) {
-    val changed: Boolean get() = pushed > 0 || pulled > 0 || conflictsResolved > 0 || purged > 0
+    val changed: Boolean
+        get() = pushed > 0 || pulled > 0 || conflictsResolved > 0 || purged > 0
 }
 
-private enum class Action { PUSH, PULL, CONFLICT }
+private enum class Action { PUSH, PULL, CONFLICT, RECONCILE }
 
 private enum class ConflictOutcome { KEEP_BOTH, DEFERRED, NONE }
 
@@ -66,10 +69,21 @@ class NoteSyncEngine(
 
     private val syncMutex = Mutex()
 
-    /** Serialised: two overlapping syncs would fight over the same baselines. */
-    suspend fun sync(): SyncResult = syncMutex.withLock { syncPass() }
+    /**
+     * One push/pull pass.
+     *
+     * [pushSettleMillis] holds back local changes younger than that: a burst of edits
+     * coalesces into a single push rather than one per pause, and two devices are far less
+     * likely to be writing the same record at the same moment. Pulls are never delayed, so
+     * picking up another device's work stays responsive. Pass `0` to push immediately — that
+     * is what the manual sync button does.
+     */
+    suspend fun sync(
+        pushSettleMillis: Long = 0L,
+        nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
+    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis) }
 
-    private suspend fun syncPass(): SyncResult {
+    private suspend fun syncPass(pushSettleMillis: Long, nowMillis: Long): SyncResult {
         val entriesByUuid = remote.list()
             .mapNotNull { entry -> parseFileName(entry.name)?.let { it.uuid to entry } }
             .toMap()
@@ -80,15 +94,29 @@ class NoteSyncEngine(
             .filter { repository.folderByUuid(it.entityUuid) == null && repository.noteByUuid(it.entityUuid) == null }
             .forEach { repository.clearOutbox(it.entityType, it.entityUuid) }
 
-        val dirty = repository.pendingOutbox().mapTo(mutableSetOf()) { it.entityUuid }
-        dirty += neverPublished(entriesByUuid)
+        val baselines = repository.allBaselines()
+        val queued = repository.pendingOutbox()
+        val dirty = queued.mapTo(mutableSetOf()) { it.entityUuid }
+        val unpublishedNew = neverPublished(entriesByUuid, baselines, dirty)
+        dirty += unpublishedNew
+
+        // Records whose last local change is still fresh stay queued. Rows that predate the
+        // outbox have no `enqueuedAt` to wait on, so they go out immediately.
+        val settledBefore = nowMillis - pushSettleMillis
+        val pushable = buildSet {
+            addAll(unpublishedNew)
+            queued.filter { it.enqueuedAt <= settledBefore }.forEach { add(it.entityUuid) }
+        }
 
         val decisions = LinkedHashSet<String>()
             .apply {
                 addAll(dirty)
                 addAll(entriesByUuid.keys)
+                // A record whose remote file has vanished is discoverable *only* through its
+                // baseline: it is neither dirty nor present in the listing.
+                addAll(baselines.map { it.entityUuid })
             }
-            .mapNotNull { uuid -> decide(uuid, uuid in dirty, entriesByUuid[uuid]) }
+            .mapNotNull { uuid -> decide(uuid, uuid in dirty, uuid in pushable, entriesByUuid[uuid]) }
 
         val folders = decisions.filter { it.entityType == EntityType.FOLDER }
         val notes = decisions.filter { it.entityType != EntityType.FOLDER }
@@ -97,37 +125,57 @@ class NoteSyncEngine(
         var pulled = 0
         var resolved = 0
         var pending = 0
+        var failed = 0
 
         // Folders before notes so a pulled note can resolve its parent, and pulls before
         // pushes so remote structure exists before we write against it.
         pulled += pullFolders(folders.filter { it.action == Action.PULL })
         for (decision in folders) {
-            when (decision.action) {
-                Action.PUSH -> if (push(decision)) pushed++
-                Action.CONFLICT -> if (deferConflict(decision, "folder-conflict")) pending++
-                Action.PULL -> Unit
+            try {
+                when (decision.action) {
+                    Action.PUSH -> if (push(decision)) pushed++
+                    Action.PULL -> Unit
+                    Action.CONFLICT, Action.RECONCILE -> if (
+                        deferConflict(
+                            decision,
+                            if (decision.remote == null) "remote-missing" else "folder-conflict",
+                        )
+                    ) {
+                        pending++
+                    }
+                }
+            } catch (t: Throwable) {
+                repository.recordOutboxAttempt(decision.entityType, decision.uuid, t.message)
+                failed++
             }
         }
 
         pulled += pullNotes(notes.filter { it.action == Action.PULL })
         for (decision in notes) {
-            when (decision.action) {
-                Action.PUSH -> if (push(decision)) pushed++
-                Action.PULL -> Unit
-                Action.CONFLICT -> when (resolveNoteConflict(decision)) {
-                    ConflictOutcome.KEEP_BOTH -> {
-                        resolved++
-                        pushed += 2
-                    }
+            try {
+                when (decision.action) {
+                    Action.PUSH -> if (push(decision)) pushed++
+                    Action.PULL -> Unit
+                    Action.RECONCILE -> if (deferConflict(decision, "remote-missing")) pending++
+                    Action.CONFLICT -> when (resolveNoteConflict(decision)) {
+                        ConflictOutcome.KEEP_BOTH -> {
+                            resolved++
+                            pushed += 2
+                        }
 
-                    ConflictOutcome.DEFERRED -> pending++
-                    ConflictOutcome.NONE -> Unit
+                        ConflictOutcome.DEFERRED -> pending++
+                        ConflictOutcome.NONE -> Unit
+                    }
                 }
+            } catch (t: Throwable) {
+                // One unreadable record must not block every other change in the sync.
+                repository.recordOutboxAttempt(decision.entityType, decision.uuid, t.message)
+                failed++
             }
         }
 
         val purged = purgeExpiredTombstones()
-        return SyncResult(pushed, pulled, resolved, pending, purged)
+        return SyncResult(pushed, pulled, resolved, pending, purged, failed)
     }
 
     /**
@@ -203,20 +251,27 @@ class NoteSyncEngine(
      * Without this the first sync after enabling sync would skip them entirely — and a
      * note inside a folder that was never published would upload a `parentUuid` no other
      * device can resolve, which is exactly how notes end up parked at the root.
+     * Rows that *are* queued are excluded: those are ordinary fresh edits, and a brand-new
+     * note should be governed by the push settle window like any other change.
      */
-    private fun neverPublished(remoteUuids: Map<String, RemoteEntry>): Set<String> {
-        val baselines = repository.allBaselines()
-            .mapTo(mutableSetOf()) { it.entityType to it.entityUuid }
+    private fun neverPublished(
+        remoteUuids: Map<String, RemoteEntry>,
+        baselineRows: List<SyncBaseline>,
+        queuedUuids: Set<String>,
+    ): Set<String> {
+        val baselines = baselineRows.mapTo(mutableSetOf()) { it.entityType to it.entityUuid }
 
         return buildSet {
             repository.allFoldersNow().forEach { folder ->
                 // The root is implicit: its uuid is a constant every device already knows.
                 if (folder.uuid == NoteRepository.ROOT_FOLDER_UUID) return@forEach
+                if (folder.uuid in queuedUuids) return@forEach
                 if ((EntityType.FOLDER to folder.uuid) !in baselines && folder.uuid !in remoteUuids) {
                     add(folder.uuid)
                 }
             }
             repository.allNotesNow().forEach { note ->
+                if (note.uuid in queuedUuids) return@forEach
                 if ((EntityType.NOTE to note.uuid) !in baselines && note.uuid !in remoteUuids) {
                     add(note.uuid)
                 }
@@ -224,7 +279,12 @@ class NoteSyncEngine(
         }
     }
 
-    private fun decide(uuid: String, isDirty: Boolean, remoteEntry: RemoteEntry?): Decision? {
+    private fun decide(
+        uuid: String,
+        isDirty: Boolean,
+        isPushable: Boolean,
+        remoteEntry: RemoteEntry?,
+    ): Decision? {
         val folder = repository.folderByUuid(uuid)
         val note = if (folder == null) repository.noteByUuid(uuid) else null
 
@@ -244,11 +304,25 @@ class NoteSyncEngine(
 
         val baseline = repository.baseline(entityType, uuid)
         val remoteChanged = remoteEntry != null && remoteEntry.version != baseline?.remoteRevisionId
+        // We published this record and the remote file is gone. Deliberately *not* read as a
+        // deletion — a wrong listing would then delete notes wholesale — but also not ignored,
+        // which is what used to leave a silent phantom copy. It becomes a question instead.
+        val remoteMissing = remoteEntry == null && baseline != null
+        val localDeleted = folder?.deletedAt != null || note?.deletedAt != null
 
         return when {
             isDirty && remoteChanged -> Decision(uuid, entityType, Action.CONFLICT, remoteEntry)
+            // Edited here, gone there: almost certainly deleted elsewhere (possibly by GC), so
+            // this is the delete-vs-edit question rather than a silent re-upload.
+            isDirty && remoteMissing && !localDeleted -> Decision(uuid, entityType, Action.CONFLICT, null)
+            // Changed here, but too recently to push: leave it queued for a later pass.
+            isDirty && !isPushable -> null
+            // Includes re-publishing a local tombstone when the remote copy vanished. A
+            // duplicate file is cheaper than forgetting a deletion.
             isDirty -> Decision(uuid, entityType, Action.PUSH, remoteEntry)
             remoteChanged -> Decision(uuid, entityType, Action.PULL, remoteEntry)
+            // Alive here, absent there, and untouched by us: ask rather than assume.
+            remoteMissing && !localDeleted -> Decision(uuid, entityType, Action.RECONCILE, null)
             else -> null
         }
     }
@@ -373,10 +447,19 @@ class NoteSyncEngine(
     }
 
     private suspend fun resolveNoteConflict(decision: Decision): ConflictOutcome {
-        val entry = decision.remote ?: return ConflictOutcome.NONE
         val local = repository.noteByUuid(decision.uuid) ?: return ConflictOutcome.NONE
-        val remoteFile = runCatching { decodeNoteFile(remote.download(entry.fileId)) }.getOrNull()
-            ?: return ConflictOutcome.NONE
+        val entry = decision.remote
+        val remoteFile = entry?.let { candidate ->
+            runCatching { decodeNoteFile(remote.download(candidate.fileId)) }.getOrNull()
+        }
+
+        // Nothing on the remote to merge with: the file was deleted elsewhere and GC removed
+        // the tombstone. Ask instead of guessing (resolving it as "keep mine" re-uploads the
+        // local version; "keep theirs" honours the deletion).
+        if (remoteFile == null) {
+            deferConflict(decision, "remote-missing")
+            return ConflictOutcome.DEFERRED
+        }
 
         val localDeleted = local.deletedAt != null
         val remoteDeleted = remoteFile.deletedAt != null

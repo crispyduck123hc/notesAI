@@ -17,6 +17,13 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
-*notes.db
+
+# Local SQLite stores: one per signed-in account (`notes-<hash>.db`), plus SQLite's
+# sidecar files (-wal/-shm/-journal). User data, not source — the schema is created and
+# migrated automatically, so versioning one buys nothing and commits your notes.
+notes.db
+notes-*.db*
+
 prompt.md
 scope.md
+response.md
