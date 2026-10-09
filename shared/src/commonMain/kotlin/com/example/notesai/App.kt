@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GoogleAuthManager
 import com.example.notesai.auth.TokenStore
@@ -45,7 +46,13 @@ private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
 
 @Composable
-fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
+fun App(
+    driverFactory: DatabaseDriverFactory,
+    tokenStore: TokenStore,
+    // Desktop supplies a remembered instance so its window-close handler can drain the queue.
+    // Mobile has no equivalent hook, so the default is simply never used there.
+    exitFlush: ExitFlush = remember { ExitFlush() },
+) {
     val http = remember { HttpClient() }
     val auth = remember(http, tokenStore) {
         GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
@@ -94,6 +101,7 @@ fun App(driverFactory: DatabaseDriverFactory, tokenStore: TokenStore) {
                 driverFactory = driverFactory,
                 http = http,
                 accessToken = auth::accessToken,
+                exitFlush = exitFlush,
                 onSignOut = {
                     auth.signOut()
                     account = null
@@ -113,15 +121,13 @@ private fun AccountNotes(
     driverFactory: DatabaseDriverFactory,
     http: HttpClient,
     accessToken: suspend () -> String?,
+    exitFlush: ExitFlush,
     onSignOut: () -> Unit,
 ) {
     val scopeName = remember(account) { accountDatabaseName(account.email) }
 
     val repository = remember(scopeName) {
         NoteRepository(driverFactory, scopeName).also { it.recordAccountScope(scopeName) }
-    }
-    DisposableEffect(scopeName) {
-        onDispose { repository.close() }
     }
 
     // Tripwire: the database is named after the account, so a mismatch means something is
@@ -145,13 +151,33 @@ private fun AccountNotes(
         syncing = false
     }
 
-    // On sign-in and on cold start, so a fresh device populates itself immediately. Pushes
-    // here still respect the settle window; anything older than it goes up straight away.
-    LaunchedEffect(scopeName) { runSync() }
+    // Offer this account's outbox to the exit path. Unregistering before closing matters: the
+    // flush touches the repository, and the process may be on its way out.
+    DisposableEffect(scopeName) {
+        exitFlush.register(
+            pendingCount = { repository.pendingOutbox().size },
+            flush = { runSync(pushSettleMillis = 0L) },
+        )
+        onDispose {
+            exitFlush.unregister()
+            repository.close()
+        }
+    }
 
-    // Then a slow tick: this is what picks up other devices' work, and what eventually pushes
-    // the backlog. There is deliberately no per-edit trigger any more — with the settle window
-    // it would fire and do nothing, and the tick covers it.
+    // On sign-in and on cold start, so a fresh device populates itself immediately. This one
+    // pushes regardless of the settle window: anything still queued is from a previous
+    // session, not someone mid-sentence.
+    LaunchedEffect(scopeName) { runSync(pushSettleMillis = 0L) }
+
+    // Returning to the window is the natural moment to catch up, and it replaces the explicit
+    // sync button. It respects the settle window so alt-tabbing doesn't spam uploads.
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(windowFocused) {
+        if (windowFocused && !accountMismatch) runSync()
+    }
+
+    // A slow tick: picks up other devices' work, and eventually pushes the backlog. There is
+    // deliberately no per-edit trigger — with the settle window it would fire and do nothing.
     LaunchedEffect(scopeName) {
         if (accountMismatch) return@LaunchedEffect
         while (true) {
@@ -165,8 +191,6 @@ private fun AccountNotes(
         account = account,
         syncStatus = syncStatus,
         syncing = syncing,
-        // Manual sync means "now": bypass the settle window.
-        onSync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {
                 try {

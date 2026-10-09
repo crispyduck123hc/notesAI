@@ -24,7 +24,6 @@ fun NotesScreen(
     account: AccountInfo,
     syncStatus: String?,
     syncing: Boolean,
-    onSync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -99,7 +98,6 @@ fun NotesScreen(
             onMoveNote = { movingNoteId = it },
             onCreateNote = { selectedNoteId = repository.addNote(folderId = selectedFolderId) },
             onCreateFolder = { showNewFolderDialog = true },
-            onSync = onSync,
             onReviewConflicts = { showConflicts = true },
             onSignOut = onSignOut,
         )

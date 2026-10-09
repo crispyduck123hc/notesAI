@@ -24,7 +24,9 @@ android {
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.example.notesai"
+        // Store identity. Deliberately not `com.example.*`: that prefix is unowned (Play
+        // rejects it) and it gets baked into the Android OAuth client and the store listing.
+        applicationId = "io.github.crispyduck123hc.notesai"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1

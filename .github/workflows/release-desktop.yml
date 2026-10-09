@@ -1,0 +1,77 @@
+name: Release desktop installers
+
+# Native distributions cannot be cross-compiled: each package format has to be built on its
+# own operating system, which is the whole reason this is a matrix rather than one job.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # local.properties is git-ignored; the build compiles these into LocalSecrets. Empty
+      # values still build, but a release should carry the real client ids.
+      - name: Provide OAuth client ids
+        shell: bash
+        run: |
+          {
+            echo "google.desktop.clientId=${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}"
+            echo "google.desktop.clientSecret=${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}"
+          } >> local.properties
+
+      - name: Import the macOS signing certificate
+        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12 != ''
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          echo "$CERT_P12" | base64 --decode > cert.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import cert.p12 -k build.keychain -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+          rm cert.p12
+
+      # `packageDistributionForCurrentOS` rather than the ProGuard (`Release`) variant: R8/ProGuard
+      # needs keep rules for kotlinx.serialization, Ktor and SQLDelight before it is safe to ship.
+      - name: Build the installer
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+        shell: bash
+        run: ./gradlew :desktopApp:packageDistributionForCurrentOS
+
+      # Notarization is a separate step, and macOS-only.
+      - name: Notarize the macOS build
+        if: runner.os == 'macOS' && secrets.NOTARIZATION_APPLE_ID != ''
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+        run: ./gradlew :desktopApp:notarizeDmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notesAI-${{ matrix.os }}
+          path: desktopApp/build/compose/binaries/
+          if-no-files-found: error
