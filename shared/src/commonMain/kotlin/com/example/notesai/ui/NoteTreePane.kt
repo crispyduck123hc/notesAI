@@ -32,6 +32,7 @@ internal fun NoteTreePane(
     selectedNoteId: Long?,
     accountEmail: String?,
     syncStatus: String?,
+    hasSyncError: Boolean,
     syncing: Boolean,
     conflictCount: Int,
     onToggle: (Long) -> Unit,
@@ -43,8 +44,8 @@ internal fun NoteTreePane(
     onMoveNote: (Long) -> Unit,
     onCreateNote: () -> Unit,
     onCreateFolder: () -> Unit,
-    onSync: () -> Unit,
     onReviewConflicts: () -> Unit,
+    onShowSyncError: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -84,22 +85,30 @@ internal fun NoteTreePane(
         Spacer(modifier = Modifier.height(Dimens.Gutter))
         HorizontalDivider()
 
-        // Sync state. Manual for now, but the app also syncs on start, after edits and
-        // periodically, so this is mostly a report.
-        Row(
+        // Sync state. There is deliberately no sync button: the app syncs on start, when the
+        // window regains focus, and on a slow tick — this is a report, not a control.
+        Text(
+            text = when {
+                syncing -> "Syncing\u2026"
+                syncStatus != null -> syncStatus
+                else -> "Not synced yet"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = syncStatus ?: "Not synced yet",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onSync, enabled = !syncing) {
-                Text(if (syncing) "Syncing\u2026" else "Sync now")
+        )
+
+        if (hasSyncError) {
+            TextButton(
+                onClick = onShowSyncError,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = "Sync problem \u2014 what went wrong?",
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
 

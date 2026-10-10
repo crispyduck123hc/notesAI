@@ -1,7 +1,10 @@
 TEAM_ID=
 
 PRODUCT_NAME=notesAI
-PRODUCT_BUNDLE_IDENTIFIER=com.example.notesai.notesAI$(TEAM_ID)
+
+// Store identity. Must match an App ID you have created, and the iOS OAuth client's bundle ID.
+// Do not append TEAM_ID here — the team is a signing input, not part of the identifier.
+PRODUCT_BUNDLE_IDENTIFIER=io.github.crispyduck123hc.notesai
 
 CURRENT_PROJECT_VERSION=1
 MARKETING_VERSION=1.0
