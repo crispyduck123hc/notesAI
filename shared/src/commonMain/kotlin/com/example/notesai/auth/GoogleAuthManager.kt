@@ -10,6 +10,32 @@ import kotlinx.serialization.decodeFromString
 import kotlin.time.Clock
 
 /**
+ * Scopes whose absence means sync genuinely cannot work.
+ *
+ * Deliberately narrower than the list the app *asks* for. `openid` and `email` only decide
+ * whether the sidebar can show an address next to the connected account; treating them as
+ * mandatory would sign people out over cosmetics.
+ */
+private val requiredScopes = listOf(DRIVE_APP_DATA_SCOPE)
+
+/**
+ * Google takes the OpenID Connect shorthand but records the *expanded* form in the token
+ * response: ask for `email`, and the grant comes back as
+ * `https://www.googleapis.com/auth/userinfo.email`. Compared literally, a perfectly good
+ * grant looks like it is missing a scope.
+ *
+ * This is not hypothetical — it was a real bug. The check compared the requested spellings
+ * against the recorded ones, so it could never be satisfied, and the app demanded a fresh
+ * sign-in on every single launch no matter how many times you signed in.
+ */
+private val scopeAliases = mapOf(
+    "https://www.googleapis.com/auth/userinfo.email" to "email",
+    "https://www.googleapis.com/auth/userinfo.profile" to "profile",
+)
+
+private fun canonicalScope(scope: String): String = scopeAliases[scope] ?: scope
+
+/**
  * Drives the Google OAuth 2.0 authorization-code + PKCE flow and owns the resulting
  * tokens. Nothing here is platform specific except [authorizeInteractively], which
  * opens a browser and captures the redirect.
@@ -27,21 +53,18 @@ class GoogleAuthManager(
      * Whether the saved grant is missing something the app needs, so the only way forward is
      * a fresh consent.
      *
-     * This matters because a refresh token can never *gain* scopes: Google hands back exactly
-     * the grant that was consented to, forever. So a stored token that is short of a scope
-     * would otherwise keep the app looking signed in while every request failed — the failure
-     * being a 403 that reads like a server problem rather than a permissions one.
-     *
-     * A token with no recorded scope is treated as fine: there is nothing to compare, and
-     * signing the user out on a guess would be worse than letting the request speak for itself.
+     * This is a *warning*, not a gate: the caller shows it and lets the user decide. Deciding
+     * for them — clearing the sign-in and refusing to open their notes — turns a wrong guess
+     * into a lockout, and this check has already been wrong once.
      */
     fun needsReauthorization(): Boolean {
         val granted = store.load()?.scope
             ?.split(' ')
             ?.filter { it.isNotBlank() }
+            ?.map(::canonicalScope)
             ?.toSet()
             ?: return false
-        return !granted.containsAll(config.scopes)
+        return !granted.containsAll(requiredScopes.map(::canonicalScope))
     }
 
     suspend fun signIn(): AccountInfo {
