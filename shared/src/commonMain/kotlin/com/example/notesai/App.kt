@@ -45,6 +45,10 @@ private const val PERIODIC_SYNC_MILLIS = 60_000L
 private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
 
+private const val REAUTHORIZATION_MESSAGE =
+    "Your Google sign-in no longer covers Google Drive, so syncing stopped. " +
+        "Please sign in again — your notes are still safe on this device."
+
 @Composable
 fun App(
     driverFactory: DatabaseDriverFactory,
@@ -65,6 +69,13 @@ fun App(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(auth) {
+        // A saved grant that cannot sync is worse than no saved grant: the app looks signed in
+        // while every upload fails. Clearing it puts the user back on the login screen with a
+        // reason, and for a scope problem that is the fix rather than a workaround.
+        if (auth.needsReauthorization()) {
+            auth.signOut()
+            error = REAUTHORIZATION_MESSAGE
+        }
         account = auth.restore()
         restoring = false
     }
@@ -139,14 +150,18 @@ private fun AccountNotes(
     val scope = rememberCoroutineScope()
 
     var syncStatus by remember(scopeName) { mutableStateOf<String?>(null) }
+    var syncError by remember(scopeName) { mutableStateOf<String?>(null) }
     var syncing by remember(scopeName) { mutableStateOf(false) }
 
     suspend fun runSync(pushSettleMillis: Long = PUSH_SETTLE_MILLIS) {
         syncing = true
-        syncStatus = if (accountMismatch) {
-            ACCOUNT_MISMATCH_MESSAGE
+        if (accountMismatch) {
+            syncStatus = ACCOUNT_MISMATCH_MESSAGE
+            syncError = null
         } else {
-            describeSync(syncEngine, repository, pushSettleMillis)
+            val outcome = describeSync(syncEngine, repository, pushSettleMillis)
+            syncStatus = outcome.summary
+            syncError = outcome.error
         }
         syncing = false
     }
@@ -190,7 +205,9 @@ private fun AccountNotes(
         repository = repository,
         account = account,
         syncStatus = syncStatus,
+        syncError = syncError,
         syncing = syncing,
+        onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {
                 try {
@@ -207,6 +224,13 @@ private fun AccountNotes(
 }
 
 /**
+ * One pass, reduced to what the UI shows: a short status line, plus the full text of a failure
+ * when there was one. The two are kept apart because they belong in different places — the
+ * line goes in the sidebar, the detail goes in a dialog the reader can copy from.
+ */
+private class SyncOutcome(val summary: String, val error: String? = null)
+
+/**
  * Runs one push/pull pass and describes what happened, including anything that needs a human
  * decision. Failures are reported rather than thrown, so a network problem doesn't take the
  * UI down.
@@ -215,16 +239,20 @@ private suspend fun describeSync(
     engine: NoteSyncEngine,
     repository: NoteRepository,
     pushSettleMillis: Long,
-): String {
+): SyncOutcome {
     val result = try {
         engine.sync(pushSettleMillis = pushSettleMillis)
     } catch (t: Throwable) {
-        return t.message ?: "Sync failed"
+        val detail = t.message ?: t.toString()
+        // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the
+        // whole thing without clicking anything.
+        println("[notesAI] sync failed: $detail")
+        return SyncOutcome(summary = "Sync failed", error = detail)
     }
     val pending = repository.unresolvedConflicts().size
     val queued = repository.pendingOutbox().size
 
-    return buildString {
+    val summary = buildString {
         if (!result.changed && pending == 0 && result.failed == 0 && queued == 0) {
             append("Up to date")
         } else {
@@ -240,4 +268,6 @@ private suspend fun describeSync(
         if (queued > 0) append(". $queued change(s) waiting to upload")
         if (pending > 0) append(". $pending conflict(s) need a decision")
     }
+
+    return SyncOutcome(summary = summary)
 }

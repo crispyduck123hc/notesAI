@@ -32,6 +32,7 @@ internal fun NoteTreePane(
     selectedNoteId: Long?,
     accountEmail: String?,
     syncStatus: String?,
+    hasSyncError: Boolean,
     syncing: Boolean,
     conflictCount: Int,
     onToggle: (Long) -> Unit,
@@ -44,6 +45,7 @@ internal fun NoteTreePane(
     onCreateNote: () -> Unit,
     onCreateFolder: () -> Unit,
     onReviewConflicts: () -> Unit,
+    onShowSyncError: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -97,6 +99,18 @@ internal fun NoteTreePane(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        if (hasSyncError) {
+            TextButton(
+                onClick = onShowSyncError,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = "Sync problem \u2014 what went wrong?",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
 
         if (conflictCount > 0) {
             TextButton(

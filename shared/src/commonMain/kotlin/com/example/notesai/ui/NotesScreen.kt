@@ -23,7 +23,9 @@ fun NotesScreen(
     repository: NoteRepository,
     account: AccountInfo,
     syncStatus: String?,
+    syncError: String?,
     syncing: Boolean,
+    onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -38,6 +40,7 @@ fun NotesScreen(
     var renamingFolderId by remember { mutableStateOf<Long?>(null) }
     var movingNoteId by remember { mutableStateOf<Long?>(null) }
     var showConflicts by remember { mutableStateOf(false) }
+    var showSyncError by remember { mutableStateOf(false) }
 
     val tree = remember(folders, notes, expanded) { buildNoteTree(folders, notes, expanded) }
     val selectedNote = notes.firstOrNull { it.id == selectedNoteId }
@@ -72,6 +75,7 @@ fun NotesScreen(
             selectedNoteId = selectedNoteId,
             accountEmail = account.email,
             syncStatus = syncStatus,
+            hasSyncError = syncError != null,
             syncing = syncing,
             conflictCount = conflictItems.size,
             onToggle = { id ->
@@ -99,6 +103,7 @@ fun NotesScreen(
             onCreateNote = { selectedNoteId = repository.addNote(folderId = selectedFolderId) },
             onCreateFolder = { showNewFolderDialog = true },
             onReviewConflicts = { showConflicts = true },
+            onShowSyncError = { showSyncError = true },
             onSignOut = onSignOut,
         )
 
@@ -156,6 +161,20 @@ fun NotesScreen(
             items = conflictItems,
             onResolve = { id, keepLocal -> onResolveConflict(id, keepLocal) },
             onDismiss = { showConflicts = false },
+        )
+    }
+
+    val problem = syncError
+    if (showSyncError && problem != null) {
+        SyncErrorDialog(
+            message = problem,
+            // Retrying is what makes the hint actionable: fix the cause, press the button,
+            // and there is no need to wait for the next tick or restart the app.
+            onRetry = {
+                showSyncError = false
+                onRetrySync()
+            },
+            onDismiss = { showSyncError = false },
         )
     }
 }

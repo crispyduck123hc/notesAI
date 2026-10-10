@@ -5,6 +5,7 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.decodeFromString
 import kotlin.time.Clock
 
@@ -21,6 +22,27 @@ class GoogleAuthManager(
 
     /** The signed-in account from persisted tokens, or null if not signed in. */
     fun restore(): AccountInfo? = store.load()?.toAccountInfo()
+
+    /**
+     * Whether the saved grant is missing something the app needs, so the only way forward is
+     * a fresh consent.
+     *
+     * This matters because a refresh token can never *gain* scopes: Google hands back exactly
+     * the grant that was consented to, forever. So a stored token that is short of a scope
+     * would otherwise keep the app looking signed in while every request failed — the failure
+     * being a 403 that reads like a server problem rather than a permissions one.
+     *
+     * A token with no recorded scope is treated as fine: there is nothing to compare, and
+     * signing the user out on a guess would be worse than letting the request speak for itself.
+     */
+    fun needsReauthorization(): Boolean {
+        val granted = store.load()?.scope
+            ?.split(' ')
+            ?.filter { it.isNotBlank() }
+            ?.toSet()
+            ?: return false
+        return !granted.containsAll(config.scopes)
+    }
 
     suspend fun signIn(): AccountInfo {
         if (config.clientId.isBlank()) {
@@ -71,14 +93,28 @@ class GoogleAuthManager(
         if (tokens.expiresAtMillis - EXPIRY_SKEW_MILLIS > nowMillis()) return tokens.accessToken
 
         val refreshToken = tokens.refreshToken ?: return null
-        val response = runCatching {
+        val response = try {
             requestToken(
                 "client_id" to config.clientId,
                 "refresh_token" to refreshToken,
                 "grant_type" to "refresh_token",
                 *clientSecretParam(),
             )
-        }.getOrNull() ?: return null
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (t: Throwable) {
+            // The refresh token is the long-lived credential, so a rejection here is not a
+            // passing glitch — access was revoked, or the token expired. An OAuth client whose
+            // consent screen is still in "Testing" mode expires refresh tokens after 7 days,
+            // which presents as "it worked last week and now it doesn't".
+            //
+            // Returning null instead would surface as "not signed in to Google Drive", which
+            // is both wrong (the app is still showing the account) and useless.
+            throw AuthException(
+                "Google would not renew the sign-in, so syncing has stopped. Sign out and " +
+                    "sign in again. (${t.message ?: t})",
+            )
+        }
 
         val refreshed = tokens.copy(
             accessToken = response.accessToken,

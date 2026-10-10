@@ -47,6 +47,21 @@ private data class DrivePage(
     val nextPageToken: String? = null,
 )
 
+/** Drive's failure envelope: `{"error":{"code":403,"message":"…","errors":[{"reason":"…"}]}}`. */
+@Serializable
+private data class DriveErrorEnvelope(val error: DriveErrorBody? = null)
+
+@Serializable
+private data class DriveErrorBody(
+    val code: Int? = null,
+    val message: String? = null,
+    val status: String? = null,
+    val errors: List<DriveErrorDetail> = emptyList(),
+)
+
+@Serializable
+private data class DriveErrorDetail(val reason: String? = null)
+
 class DriveException(message: String) : Exception(message)
 
 /**
@@ -142,7 +157,65 @@ class DriveClient(
 private suspend fun HttpResponse.requireSuccess(allowEmpty: Boolean = false): String {
     val text = bodyAsText()
     if (!status.isSuccess()) {
-        throw DriveException("Drive request failed (${status.value}): ${text.take(500)}")
+        throw DriveException(describeDriveFailure(status.value, text))
     }
     return if (allowEmpty) "" else text
+}
+
+/**
+ * Turns a Drive failure into something the reader can act on.
+ *
+ * Drive explains itself in the response body, and the `reason` field is what separates "the
+ * Drive API is switched off in your Cloud project" from "your Drive is full". Reporting only
+ * the status code leaves the reader with nowhere to go, which is precisely what happens the
+ * first time this app meets a 403.
+ */
+internal fun describeDriveFailure(statusCode: Int, body: String): String {
+    val error = runCatching { driveJson.decodeFromString<DriveErrorEnvelope>(body) }.getOrNull()?.error
+    val reason = error?.errors?.firstOrNull()?.reason ?: error?.status
+    val explanation = error?.message?.takeIf { it.isNotBlank() } ?: body.take(300)
+
+    val hint = when {
+        reason == "accessNotConfigured" ||
+            explanation.contains("has not been used in project", ignoreCase = true) ||
+            explanation.contains("is disabled", ignoreCase = true) ->
+            "The Google Drive API is switched off for the Cloud project this app's OAuth " +
+                "client belongs to. Switch it on at " +
+                "https://console.cloud.google.com/apis/library/drive.googleapis.com — then " +
+                "give it a minute or two to take effect."
+
+        reason == "insufficientPermissions" ||
+            explanation.contains("insufficient authentication scopes", ignoreCase = true) ->
+            "The saved sign-in does not include Google Drive access. Sign out and sign in " +
+                "again so the app can ask for it."
+
+        reason == "storageQuotaExceeded" ->
+            "Your Google Drive is out of space, so the upload was refused."
+
+        reason == "rateLimitExceeded" || reason == "userRateLimitExceeded" ||
+            explanation.contains("Rate Limit Exceeded", ignoreCase = true) ->
+            "Google is throttling this app for the moment. That clears by itself within a " +
+                "minute or two."
+
+        statusCode == 401 ||
+            explanation.contains("Invalid Credentials", ignoreCase = true) ->
+            "The sign-in is no longer valid. Sign out and sign in again."
+
+        else -> null
+    }
+
+    return buildString {
+        append("Drive request failed (")
+        append(statusCode)
+        if (reason != null) {
+            append(", ")
+            append(reason)
+        }
+        append("): ")
+        append(explanation)
+        if (hint != null) {
+            append("\n\n")
+            append(hint)
+        }
+    }
 }
