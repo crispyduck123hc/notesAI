@@ -46,8 +46,9 @@ private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
 
 private const val REAUTHORIZATION_MESSAGE =
-    "Your Google sign-in no longer covers Google Drive, so syncing stopped. " +
-        "Please sign in again — your notes are still safe on this device."
+    "The saved Google sign-in does not include Google Drive access, so syncing cannot work. " +
+        "Use \"Sign out\" in the sidebar and sign in again to grant it. Your notes are safe " +
+        "on this device."
 
 @Composable
 fun App(
@@ -69,13 +70,6 @@ fun App(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(auth) {
-        // A saved grant that cannot sync is worse than no saved grant: the app looks signed in
-        // while every upload fails. Clearing it puts the user back on the login screen with a
-        // reason, and for a scope problem that is the fix rather than a workaround.
-        if (auth.needsReauthorization()) {
-            auth.signOut()
-            error = REAUTHORIZATION_MESSAGE
-        }
         account = auth.restore()
         restoring = false
     }
@@ -113,6 +107,11 @@ fun App(
                 http = http,
                 accessToken = auth::accessToken,
                 exitFlush = exitFlush,
+                // A sign-in that looks unable to sync is mentioned up front, but the user is
+                // never signed out over it: this comparison has been wrong before, and the
+                // consequence of guessing wrong must not be losing access to your own notes.
+                // Any real failure still arrives with the same advice, from Google itself.
+                signInWarning = if (auth.needsReauthorization()) REAUTHORIZATION_MESSAGE else null,
                 onSignOut = {
                     auth.signOut()
                     account = null
@@ -133,6 +132,7 @@ private fun AccountNotes(
     http: HttpClient,
     accessToken: suspend () -> String?,
     exitFlush: ExitFlush,
+    signInWarning: String?,
     onSignOut: () -> Unit,
 ) {
     val scopeName = remember(account) { accountDatabaseName(account.email) }
@@ -150,7 +150,9 @@ private fun AccountNotes(
     val scope = rememberCoroutineScope()
 
     var syncStatus by remember(scopeName) { mutableStateOf<String?>(null) }
-    var syncError by remember(scopeName) { mutableStateOf<String?>(null) }
+    // Starts as the sign-in warning so the guidance is available immediately; the first sync
+    // then replaces it, clearing it on success. Requests are the authority, not this.
+    var syncError by remember(scopeName) { mutableStateOf(signInWarning) }
     var syncing by remember(scopeName) { mutableStateOf(false) }
 
     suspend fun runSync(pushSettleMillis: Long = PUSH_SETTLE_MILLIS) {

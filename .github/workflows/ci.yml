@@ -1,0 +1,73 @@
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-tests:
+    name: Shared tests (JVM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # No credentials are needed: local.properties is git-ignored, and the build tolerates it
+      # being absent. That is worth having CI prove on every push.
+      - name: Test and compile
+        run: ./gradlew :shared:jvmTest :desktopApp:compileKotlin --console=plain
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports
+          path: shared/build/reports/tests/
+          if-no-files-found: ignore
+
+  android-build:
+    name: Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # The Android SDK ships with the runner, but platform 37 has to be asked for: the app
+      # compiles against 37 (targetSdk stays 36) because a transitive dependency requires it.
+      - name: Install Android SDK Platform 37
+        shell: bash
+        run: |
+          sdkmanager=$(ls "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -z "$sdkmanager" ]; then
+            echo "No sdkmanager under ${ANDROID_HOME}; the runner image changed."
+            exit 1
+          fi
+
+          # Accepting licences is best-effort: `yes` exits with SIGPIPE once sdkmanager stops
+          # reading, which `pipefail` would otherwise turn into a spurious failure.
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+
+          # The install itself must succeed, so it is not piped and not swallowed.
+          "$sdkmanager" "platforms;android-37"
+
+      - name: Assemble the debug APK
+        run: ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --console=plain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notesAI-android-debug
+          path: androidApp/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

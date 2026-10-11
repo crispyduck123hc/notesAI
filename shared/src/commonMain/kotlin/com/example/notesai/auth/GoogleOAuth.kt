@@ -10,8 +10,14 @@ const val GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
  * other Drive files are not visible to us at all. `openid`/`email` are only used to
  * show which account is connected on the login screen.
  */
+/**
+ * The one scope sync cannot work without. Named so the sign-in check can require it without
+ * also demanding the cosmetic ones — see `requiredScopes` in `GoogleAuthManager`.
+ */
+const val DRIVE_APP_DATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+
 val DEFAULT_SCOPES = listOf(
-    "https://www.googleapis.com/auth/drive.appdata",
+    DRIVE_APP_DATA_SCOPE,
     "openid",
     "email",
 )
