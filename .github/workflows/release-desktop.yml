@@ -73,5 +73,51 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: notesAI-${{ matrix.os }}
-          path: desktopApp/build/compose/binaries/
+          # Installers only. The whole `compose/binaries/` tree also holds the app image and its
+          # bundled runtime — hundreds of megabytes that would clutter the release page.
+          path: |
+            desktopApp/build/compose/binaries/main/dmg/*.dmg
+            desktopApp/build/compose/binaries/main/pkg/*.pkg
+            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/exe/*.exe
+            desktopApp/build/compose/binaries/main/deb/*.deb
+            desktopApp/build/compose/binaries/main/rpm/*.rpm
           if-no-files-found: error
+
+  # Collects the three platforms' installers onto one release page, so the download a visitor
+  # sees matches their operating system.
+  release:
+    name: Publish the release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach the installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+
+          # Each platform only produces its own format, so most of these patterns match
+          # nothing — nullglob keeps the missing ones out of the file list.
+          shopt -s nullglob
+          files=(dist/*.dmg dist/*.pkg dist/*.msi dist/*.exe dist/*.deb dist/*.rpm)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No installers were produced; refusing to publish an empty release."
+            exit 1
+          fi
+
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "notesAI $GITHUB_REF_NAME" \
+            --generate-notes \
+            "${files[@]}"
