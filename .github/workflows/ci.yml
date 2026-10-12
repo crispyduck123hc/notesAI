@@ -45,23 +45,28 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # The Android SDK ships with the runner, but platform 37 has to be asked for: the app
-      # compiles against 37 (targetSdk stays 36) because a transitive dependency requires it.
-      - name: Install Android SDK Platform 37
+      # The Android SDK ships with the runner, but the platform has to be fetched. Since API 36,
+      # platform package names carry a minor version: the installable name is
+      # `platforms;android-37.0`, and plain `android-37` is not found.
+      #
+      # This step is an optimisation, not a gate. AGP downloads a missing platform by itself (that
+      # is how it works locally), so a failure here is tolerated and the build below decides.
+      - name: Pre-fetch Android SDK Platform 37
         shell: bash
         run: |
           sdkmanager=$(ls "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
           if [ -z "$sdkmanager" ]; then
-            echo "No sdkmanager under ${ANDROID_HOME}; the runner image changed."
-            exit 1
+            echo "::warning::No sdkmanager found; leaving the download to Gradle."
+            exit 0
           fi
 
-          # Accepting licences is best-effort: `yes` exits with SIGPIPE once sdkmanager stops
-          # reading, which `pipefail` would otherwise turn into a spurious failure.
-          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          # `yes` dies with SIGPIPE once sdkmanager stops reading, and `pipefail` would turn that
+          # into a spurious failure of this step — hence discarding its stderr and ignoring the
+          # result. Licences are what matter, and they are usually already accepted on the runner.
+          yes 2>/dev/null | "$sdkmanager" --licenses > /dev/null 2>&1 || true
 
-          # The install itself must succeed, so it is not piped and not swallowed.
-          "$sdkmanager" "platforms;android-37"
+          "$sdkmanager" "platforms;android-37.0" \
+            || echo "::warning::Could not pre-fetch it; letting Gradle try."
 
       - name: Assemble the debug APK
         run: ./gradlew :androidApp:assembleDebug :shared:testAndroidHostTest --console=plain
