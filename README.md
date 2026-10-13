@@ -69,7 +69,7 @@ Each pass settles the remote first and then pushes local state, folders before n
 
 | | |
 |---|---|
-| **Any platform** | A JVM to start Gradle. The build pins JDK 21 (Azul Zulu) and downloads it automatically, so you normally don't need to install 21 yourself |
+| **Any platform** | A JVM to start Gradle. The build pins JDK 21 (any vendor) and fetches one if your machine has none, so you normally don't need to install 21 yourself |
 | **Desktop** | macOS 13+, Windows 10+, or a modern Linux. Nothing else |
 | **Android** | Android Studio (or the Android SDK) with **SDK Platform 37**. Gradle fetches it if licences are accepted |
 | **iOS** | macOS with Xcode 16 or later |
@@ -291,6 +291,17 @@ status. See step 2c.
 packaged build that predates a fix: the database used to be written to the working directory, and
 the packaged Java runtime used to be missing the JDBC module. Both are fixed; rebuild if you have
 an old copy.
+
+**`Unable to download toolchain matching the requirements`** — the daemon JVM criteria in
+`gradle/gradle-daemon-jvm.properties` pin a JDK version and possibly a vendor, and the pinned
+vendor's download URL has probably gone stale. Fix it with:
+
+```bash
+./gradlew updateDaemonJvm --jvm-version=21
+```
+
+Leaving out `--jvm-vendor` is deliberate: pinning no vendor means any installed JDK 21 satisfies the
+build, which is what lets CI use the JDK it already has instead of downloading one.
 
 **Notes appear to be missing** — check you are signed into the same Google account. Each account
 gets its own database, so a different account shows a different, emptier set of notes.
