@@ -27,6 +27,8 @@ that work is deliberately deferred. See [Not implemented yet](#not-implemented-y
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
 - [Not implemented yet](#not-implemented-yet)
+- [Licence](#licence)
+- [Privacy](#privacy)
 
 ---
 
@@ -335,6 +337,22 @@ Honest list, so nothing here is a surprise:
 - **A web target.** Excluded from `settings.gradle.kts`.
 - **Drag and drop** in the note tree, and incremental pulls via Drive's `changes.list` (the app
   lists the folder each pass, which is fine at this size).
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). In short: use it, fork it, modify it, ship it, sell it, as long as you
+keep the copyright notice. It comes with no warranty.
+
+## Privacy
+
+There is no notesAI server. Your notes live on your own device and, if you sign in, in a hidden
+folder inside your own Google Drive; nothing is sent anywhere else, and the author of this app
+receives none of it.
+
+The full policy — including what the one requested Google permission can and cannot see, and how to
+delete everything — is in [PRIVACY_POLICY.md](PRIVACY_POLICY.md). That file is also what Google links
+to from the sign-in consent screen, so it is written to be read by someone deciding whether to trust
+the app.
 
 ## More detail
 

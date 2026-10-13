@@ -95,6 +95,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -116,8 +118,33 @@ jobs:
             exit 1
           fi
 
+          # A hyphen in the tag means a pre-release by semver convention (v1.0.0-beta.1,
+          # v0.2.0-rc.1). GitHub then keeps it out of /releases/latest and labels it on the page.
+          # Plain v0.x.y tags are deliberately *not* pre-releases: 0.x signals "expect changes",
+          # but it is still the release you want people to find.
+          prerelease=()
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease+=(--prerelease) ;;
+          esac
+
+          # Refuse to publish an empty release, and note that `--generate-notes` needs the tag.
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "notesAI $GITHUB_REF_NAME" \
             --generate-notes \
+            ${prerelease[@]+"${prerelease[@]}"} \
             "${files[@]}"
+
+          # Put the install instructions above the generated changelog. For an unsigned macOS
+          # build "why won't it open?" is the first question every downloader has, and a release
+          # page is where they will look. Cosmetic, so a failure here warns rather than failing an
+          # otherwise-good release.
+          notes=$(mktemp)
+          if [ -f .github/RELEASE_NOTES.md ]; then
+            cat .github/RELEASE_NOTES.md > "$notes"
+            printf '\n---\n\n' >> "$notes"
+          fi
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body \
+            | jq -r .body >> "$notes"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" \
+            || echo "::warning::Could not prepend the install instructions; edit the release by hand."
