@@ -118,14 +118,19 @@ jobs:
             exit 1
           fi
 
-          # A hyphen in the tag means a pre-release by semver convention (v1.0.0-beta.1,
-          # v0.2.0-rc.1). GitHub then keeps it out of /releases/latest and labels it on the page.
-          # Plain v0.x.y tags are deliberately *not* pre-releases: 0.x signals "expect changes",
-          # but it is still the release you want people to find.
+          # A hyphen in the tag means a pre-release by convention (v1.0.0-beta.1), and that is the
+          # only way to say it: jpackage rejects a 0.x version, so the number itself cannot carry
+          # "this is early". GitHub then keeps it out of /releases/latest and labels it on the page.
           prerelease=()
           case "$GITHUB_REF_NAME" in
             *-*) prerelease+=(--prerelease) ;;
           esac
+
+          # Checksums, so someone can confirm the file they received is the one that was built.
+          # Worth more than usual here because the macOS build is unsigned. Bare filenames, so
+          # `shasum -a 256 -c SHA256SUMS.txt` works in whatever folder they downloaded into.
+          (cd dist && sha256sum $(basename -a "${files[@]}") > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
 
           # Refuse to publish an empty release, and note that `--generate-notes` needs the tag.
           gh release create "$GITHUB_REF_NAME" \
@@ -133,7 +138,8 @@ jobs:
             --title "notesAI $GITHUB_REF_NAME" \
             --generate-notes \
             ${prerelease[@]+"${prerelease[@]}"} \
-            "${files[@]}"
+            "${files[@]}" \
+            dist/SHA256SUMS.txt
 
           # Put the install instructions above the generated changelog. For an unsigned macOS
           # build "why won't it open?" is the first question every downloader has, and a release

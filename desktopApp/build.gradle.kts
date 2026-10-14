@@ -18,6 +18,10 @@ dependencies {
 // Read at configuration time; empty unless the release credentials are present.
 val buildEnv = providers
 
+// The version the installer is named after. Comes from the same gradle.properties value the app
+// displays and Android reports, so the artifact and the tag can't disagree by accident.
+val appVersion = providers.gradleProperty("notesai.version").getOrElse("1.0.0")
+
 compose.desktop {
     application {
         mainClass = "com.example.notesai.MainKt"
@@ -26,7 +30,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
 
             packageName = "notesAI"
-            packageVersion = "1.0.0"
+            packageVersion = appVersion
             description = "Notes you own, kept in your own Google Drive"
             vendor = "notesAI"
 

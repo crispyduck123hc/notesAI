@@ -33,6 +33,24 @@ without any warning. It has to be repeated for each new download.
 On **Windows**, you'll see "Windows protected your PC" once — click **More info**, then **Run
 anyway**. On **Linux** there is nothing to do.
 
+## Verify your download
+
+Each release includes a `SHA256SUMS.txt`. To check that the file you received is the one that was
+built:
+
+```bash
+# macOS or Linux — run in the folder you downloaded into
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+```powershell
+# Windows (PowerShell) — compare the result with the matching line in SHA256SUMS.txt
+Get-FileHash .\notesAI-<version>.msi -Algorithm SHA256
+```
+
+Worth the ten seconds here in particular: the macOS build is not signed, so a matching checksum is
+the only way to know what you downloaded is what was published.
+
 ## Where your notes live
 
 Each device keeps its own local database and syncs it to a hidden folder in **your own Google
