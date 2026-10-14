@@ -80,18 +80,34 @@ jobs:
           NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
         run: ./gradlew :desktopApp:notarizeDmg
 
+      # Each format is built into its own directory, and `upload-artifact` preserves the layout it is
+      # handed: given several patterns it finds their shared parent and stores everything *below* it,
+      # so the files arrived in the release job as `dist/dmg/...` and nothing matched the publish
+      # step's `dist/*.dmg`. Staging them into one flat directory means one pattern, and therefore
+      # plain filenames all the way through.
+      - name: Stage the installer for upload
+        shell: bash
+        run: |
+          mkdir -p artifacts
+
+          # One brace-expanded glob rather than six separate paths, which is what keeps the layout
+          # flat: with a single pattern the shared parent is the format directory itself.
+          shopt -s nullglob
+          built=(desktopApp/build/compose/binaries/main/*/*.{dmg,pkg,msi,exe,deb,rpm})
+          if [ ${#built[@]} -eq 0 ]; then
+            echo "::error::This job produced no installer to publish."
+            exit 1
+          fi
+
+          cp "${built[@]}" artifacts/
+          ls -l artifacts
+
       - uses: actions/upload-artifact@v4
         with:
           name: notesAI-${{ matrix.os }}
           # Installers only. The whole `compose/binaries/` tree also holds the app image and its
-          # bundled runtime — hundreds of megabytes that would clutter the release page.
-          path: |
-            desktopApp/build/compose/binaries/main/dmg/*.dmg
-            desktopApp/build/compose/binaries/main/pkg/*.pkg
-            desktopApp/build/compose/binaries/main/msi/*.msi
-            desktopApp/build/compose/binaries/main/exe/*.exe
-            desktopApp/build/compose/binaries/main/deb/*.deb
-            desktopApp/build/compose/binaries/main/rpm/*.rpm
+          # bundled runtime, and this directory holds nothing else.
+          path: artifacts/*
           if-no-files-found: error
 
   # Collects the three platforms' installers onto one release page, so the download a visitor
