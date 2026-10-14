@@ -42,20 +42,32 @@ compose.desktop {
             macOS {
                 bundleID = "io.github.crispyduck123hc.notesai"
 
-                // Signing is switched on only when the certificate is available, so a plain
+                // Signing is switched on only when a certificate is actually named, so a plain
                 // `packageDmg` still works on a machine without it.
-                buildEnv.environmentVariable("MACOS_SIGNING_IDENTITY").orNull?.let { identityName ->
-                    signing {
-                        sign.set(true)
-                        identity.set(identityName)
+                //
+                // Blank counts as absent. That distinction matters: a workflow that passes an
+                // unset secret through `env:` produces an *empty string*, not a missing variable,
+                // and an empty identity makes jpackage try to sign with "" and fail with
+                // "Could not find certificate for ''". Tolerating that here rather than asking
+                // every caller to be careful keeps an unsigned build buildable from anywhere.
+                buildEnv.environmentVariable("MACOS_SIGNING_IDENTITY").orNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { identityName ->
+                        signing {
+                            sign.set(true)
+                            identity.set(identityName)
+                        }
                     }
-                }
 
-                // Only consulted by the notarize* tasks.
+                // Only consulted by the notarize* tasks, and blank is treated as absent for the
+                // same reason: an unconfigured credential should look unconfigured.
+                fun credential(name: String) =
+                    buildEnv.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+
                 notarization {
-                    appleID.set(buildEnv.environmentVariable("NOTARIZATION_APPLE_ID"))
-                    password.set(buildEnv.environmentVariable("NOTARIZATION_PASSWORD"))
-                    teamID.set(buildEnv.environmentVariable("NOTARIZATION_TEAM_ID"))
+                    appleID.set(credential("NOTARIZATION_APPLE_ID"))
+                    password.set(credential("NOTARIZATION_PASSWORD"))
+                    teamID.set(credential("NOTARIZATION_TEAM_ID"))
                 }
             }
 
