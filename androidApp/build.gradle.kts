@@ -30,7 +30,8 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
-        versionName = "1.0"
+        // Same source of truth as the desktop installer name and the version the app displays.
+        versionName = providers.gradleProperty("notesai.version").getOrElse("1.0")
     }
     packaging {
         resources {

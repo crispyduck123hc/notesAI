@@ -12,12 +12,13 @@ Kotlin Multiplatform and Compose Multiplatform, sharing one codebase across desk
 Windows, Linux), Android and iOS.
 
 **Status.** Desktop is complete and usable. Android and iOS compile, but **cannot sign in yet** —
-that work is deliberately deferred. See [Not implemented yet](#not-implemented-yet).
+that work is deliberately deferred. See [Platform support](#platform-support).
 
 ---
 
 ## Contents
 
+- [Platform support](#platform-support)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Setup](#setup) — including creating your own Google credentials
@@ -29,6 +30,21 @@ that work is deliberately deferred. See [Not implemented yet](#not-implemented-y
 - [Not implemented yet](#not-implemented-yet)
 - [Licence](#licence)
 - [Privacy](#privacy)
+
+---
+
+## Platform support
+
+| Platform | State |
+|---|---|
+| **Desktop** — macOS, Windows, Linux | **Works.** This is the supported platform, and the only one releases are built for |
+| **Android** | Builds, but **cannot sign in**, so it is unusable in practice |
+| **iOS** | Builds, but **cannot sign in**, so it is unusable in practice |
+
+On mobile, `authorizeInteractively` throws `NotImplementedError`, so the app stops at the login
+screen. Everything else already works there — the database, the sync engine and the entire UI are
+shared, and only the browser-based sign-in step is missing. Desktop remains the target until that
+changes, and publishing mobile builds before then would be shipping an app nobody can log into.
 
 ---
 
@@ -237,6 +253,32 @@ directory (Finder uses `/`, which is not writable):
 
 Icon, signing and notarization are not configured yet: packages build without them, and readers on
 macOS get the warning described next.
+
+### Versioning
+
+One value drives the desktop installer names, the Android `versionName`, and the version shown at
+the bottom of the app's sidebar:
+
+```properties
+# gradle.properties
+notesai.version=1.0.0
+```
+
+Bump that one line, then tag the commit `v<same version>`. Two constraints are worth knowing before
+you pick a number:
+
+- **The major version cannot be zero.** The macOS installer bundler rejects `0.1.0` outright —
+  "the first number in an app-version cannot be zero or negative" — and the Windows and Linux
+  bundlers apply version rules of their own. Keeping the major at 1 or more is the safe choice for
+  all three. A pre-release therefore has to be expressed in the **tag** (`v1.0.0-beta.1`, which the
+  release workflow marks as a pre-release automatically) rather than in the number.
+- **The tag must match the version.** The installer filename comes from `notesai.version`, not from
+  the tag: tag `v1.0.0` against `notesai.version=1.0.0` and you get `notesAI-1.0.0.dmg`. Get them out
+  of step and your release page contradicts its own heading, without anything erroring.
+
+iOS is the one exception — Xcode takes its version from
+`iosApp/Configuration/Config.xcconfig` (`MARKETING_VERSION`), so mirror the value there. It is the
+only place that cannot read `gradle.properties`.
 
 ---
 

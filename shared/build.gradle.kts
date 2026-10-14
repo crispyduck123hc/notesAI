@@ -28,6 +28,34 @@ composeCompiler {
     metricsDestination = layout.buildDirectory.dir("compose-metrics")
 }
 
+// ---- Application version ------------------------------------------------------
+// Read from gradle.properties so there is one value to bump per release. It is compiled into the
+// app (and shown in the sidebar) so a bug report can say which build it came from.
+val appVersion = providers.gradleProperty("notesai.version").getOrElse("0.0.0")
+
+val appVersionDir = layout.buildDirectory.dir("generated/appVersion/kotlin")
+
+val generateAppVersion by tasks.registering {
+    val outputDir = appVersionDir
+    val version = appVersion
+    inputs.property("version", version)
+    outputs.dir(outputDir)
+
+    doLast {
+        val dir = outputDir.get().asFile.resolve("com/example/notesai")
+        dir.mkdirs()
+        dir.resolve("AppVersion.kt").writeText(
+            buildString {
+                appendLine("package com.example.notesai")
+                appendLine()
+                appendLine("// Generated from gradle.properties (notesai.version) at build time.")
+                appendLine("// Shown in the app's sidebar so a bug report can name the build.")
+                appendLine("const val APP_VERSION: String = \"$version\"")
+            },
+        )
+    }
+}
+
 // ---- Local OAuth credentials -------------------------------------------------
 // Client ids/secrets are per-machine and must not be committed, so they live in the
 // git-ignored local.properties and are compiled into a generated Kotlin file. Missing
@@ -117,6 +145,7 @@ kotlin {
     sourceSets {
         commonMain {
             kotlin.srcDir(generateLocalSecrets)
+            kotlin.srcDir(generateAppVersion)
         }
 
         androidMain.dependencies {

@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.notesai.APP_VERSION
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.collections.immutable.ImmutableList
 
@@ -141,5 +142,14 @@ internal fun NoteTreePane(
                 Text("Sign out")
             }
         }
+
+        // The build people are actually running, so a bug report can name it.
+        Text(
+            text = "notesAI $APP_VERSION",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
