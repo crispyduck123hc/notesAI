@@ -16,6 +16,16 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
 
+    # Whether signing material exists has to be decided here, not in a step's `if:`: the `secrets`
+    # context is not available at that level, and using it there makes the whole workflow file
+    # invalid (GitHub rejects the file, it does not merely skip the step).
+    #
+    # These are comparisons rather than the secrets themselves, so what lands in the job's
+    # environment is "true"/"false" and never the certificate or password.
+    env:
+      CAN_SIGN_MACOS: ${{ secrets.MACOS_CERT_P12 != '' }}
+      CAN_NOTARIZE: ${{ secrets.NOTARIZATION_APPLE_ID != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +45,7 @@ jobs:
           } >> local.properties
 
       - name: Import the macOS signing certificate
-        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12 != ''
+        if: runner.os == 'macOS' && env.CAN_SIGN_MACOS == 'true'
         env:
           CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -62,7 +72,7 @@ jobs:
 
       # Notarization is a separate step, and macOS-only.
       - name: Notarize the macOS build
-        if: runner.os == 'macOS' && secrets.NOTARIZATION_APPLE_ID != ''
+        if: runner.os == 'macOS' && env.CAN_NOTARIZE == 'true'
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
@@ -129,7 +139,9 @@ jobs:
           # Checksums, so someone can confirm the file they received is the one that was built.
           # Worth more than usual here because the macOS build is unsigned. Bare filenames, so
           # `shasum -a 256 -c SHA256SUMS.txt` works in whatever folder they downloaded into.
-          (cd dist && sha256sum $(basename -a "${files[@]}") > SHA256SUMS.txt)
+          for f in "${files[@]}"; do
+            (cd dist && sha256sum "$(basename "$f")")
+          done > dist/SHA256SUMS.txt
           cat dist/SHA256SUMS.txt
 
           # Refuse to publish an empty release, and note that `--generate-notes` needs the tag.

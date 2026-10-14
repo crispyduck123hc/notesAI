@@ -391,6 +391,24 @@ Honest list, so nothing here is a surprise:
 - **Drag and drop** in the note tree, and incremental pulls via Drive's `changes.list` (the app
   lists the folder each pass, which is fine at this size).
 
+## Contributing
+
+Issues and pull requests are welcome. A few things worth knowing first:
+
+- **Tests and builds**: `./gradlew :shared:jvmTest` should be green, and `:desktopApp:compileKotlin`,
+  `:androidApp:assembleDebug` and `:shared:linkDebugFrameworkIosSimulatorArm64` should all build.
+- **Lint the workflow files before pushing.** GitHub rejects a workflow file outright when it uses a
+  context where one isn't available — `secrets` in a step's `if:`, for example — and the failure is
+  silent: no job runs, so nothing goes red. `actionlint` catches that class of mistake locally, and
+  CI runs it too:
+
+  ```bash
+  brew install actionlint        # or: go install github.com/rhysd/actionlint/cmd/actionlint@latest
+  actionlint
+  ```
+
+- **Releases**: see [Versioning](#versioning).
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE). In short: use it, fork it, modify it, ship it, sell it, as long as you

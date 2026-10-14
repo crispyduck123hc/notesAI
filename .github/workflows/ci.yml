@@ -11,6 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workflow-lint:
+    name: Lint workflow files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches what a YAML parser cannot: contexts used where they are unavailable (putting
+      # `secrets` in a step's `if:` invalidates the entire file, and GitHub then simply refuses to
+      # run it — there is no failing job to notice), unknown keys, and shell mistakes inside `run:`.
+      # Pinned rather than `latest` so a new actionlint release cannot change the verdict on its own.
+      - uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
   shared-tests:
     name: Shared tests (JVM)
     runs-on: ubuntu-latest
@@ -54,7 +68,16 @@ jobs:
       - name: Pre-fetch Android SDK Platform 37
         shell: bash
         run: |
-          sdkmanager=$(ls "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          # A glob rather than `ls` or `find`: nothing to break under `pipefail`, and it copes with
+          # the runner image moving cmdline-tools around.
+          sdkmanager=""
+          for candidate in "${ANDROID_HOME}"/cmdline-tools/*/bin/sdkmanager; do
+            if [ -x "$candidate" ]; then
+              sdkmanager="$candidate"
+              break
+            fi
+          done
+
           if [ -z "$sdkmanager" ]; then
             echo "::warning::No sdkmanager found; leaving the download to Gradle."
             exit 0
