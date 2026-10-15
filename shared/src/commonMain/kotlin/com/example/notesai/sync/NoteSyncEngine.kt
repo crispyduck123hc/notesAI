@@ -35,6 +35,13 @@ private enum class Action { PUSH, PULL, CONFLICT, RECONCILE }
 
 private enum class ConflictOutcome { KEEP_BOTH, DEFERRED, NONE }
 
+/**
+ * A conflict outcome plus how many records were published getting there. Adopting the remote text
+ * publishes only the copy, while keeping the local text publishes the note and the copy, so the
+ * caller's `pushed` count can stay honest either way.
+ */
+private class Resolution(val outcome: ConflictOutcome, val published: Int = 0)
+
 private data class Decision(
     val uuid: String,
     val entityType: String,
@@ -157,14 +164,14 @@ class NoteSyncEngine(
                     Action.PUSH -> if (push(decision)) pushed++
                     Action.PULL -> Unit
                     Action.RECONCILE -> if (deferConflict(decision, "remote-missing")) pending++
-                    Action.CONFLICT -> when (resolveNoteConflict(decision)) {
-                        ConflictOutcome.KEEP_BOTH -> {
-                            resolved++
-                            pushed += 2
+                    Action.CONFLICT -> {
+                        val resolution = resolveNoteConflict(decision)
+                        pushed += resolution.published
+                        when (resolution.outcome) {
+                            ConflictOutcome.KEEP_BOTH -> resolved++
+                            ConflictOutcome.DEFERRED -> pending++
+                            ConflictOutcome.NONE -> Unit
                         }
-
-                        ConflictOutcome.DEFERRED -> pending++
-                        ConflictOutcome.NONE -> Unit
                     }
                 }
             } catch (t: Throwable) {
@@ -446,19 +453,20 @@ class NoteSyncEngine(
         return true
     }
 
-    private suspend fun resolveNoteConflict(decision: Decision): ConflictOutcome {
-        val local = repository.noteByUuid(decision.uuid) ?: return ConflictOutcome.NONE
-        val entry = decision.remote
-        val remoteFile = entry?.let { candidate ->
-            runCatching { decodeNoteFile(remote.download(candidate.fileId)) }.getOrNull()
+    private suspend fun resolveNoteConflict(decision: Decision): Resolution {
+        val local = repository.noteByUuid(decision.uuid) ?: return Resolution(ConflictOutcome.NONE)
+        val entry = decision.remote ?: run {
+            deferConflict(decision, "remote-missing")
+            return Resolution(ConflictOutcome.DEFERRED)
         }
+        val remoteFile = runCatching { decodeNoteFile(remote.download(entry.fileId)) }.getOrNull()
 
         // Nothing on the remote to merge with: the file was deleted elsewhere and GC removed
         // the tombstone. Ask instead of guessing (resolving it as "keep mine" re-uploads the
         // local version; "keep theirs" honours the deletion).
         if (remoteFile == null) {
             deferConflict(decision, "remote-missing")
-            return ConflictOutcome.DEFERRED
+            return Resolution(ConflictOutcome.DEFERRED)
         }
 
         val localDeleted = local.deletedAt != null
@@ -466,25 +474,46 @@ class NoteSyncEngine(
 
         if (localDeleted != remoteDeleted) {
             deferConflict(decision, "delete-vs-edit")
-            return ConflictOutcome.DEFERRED
+            return Resolution(ConflictOutcome.DEFERRED)
         }
 
         if (localDeleted) {
             // Both sides deleted it: agreement, nothing to preserve.
             push(decision)
-            return ConflictOutcome.NONE
+            return Resolution(ConflictOutcome.NONE, published = 1)
         }
 
-        // Both edited: the local note stays the original (the user's current text does not
-        // move) and the remote version is preserved as a conflicted copy.
+        // Both edited. Which text becomes *the* note has to come out the same on every device, or
+        // the two sides each keep their own text and disagree permanently — which is how one note
+        // became nine: the next edit on either side conflicted against the other half of the same
+        // disagreement and manufactured another copy.
+        //
+        // Later edit wins, and the uuid breaks a tie, so two devices reach the same answer even
+        // when the timestamps match.
+        val remoteWins = remoteFile.updatedAt > local.updatedAt ||
+            (remoteFile.updatedAt == local.updatedAt && remoteFile.uuid > local.uuid)
+
+        // Whichever text does *not* become the note is preserved as a conflicted copy, so both
+        // devices end up holding the same pair rather than mirrored halves.
         val copyRowId = repository.addNote(
-            text = remoteFile.content,
+            text = if (remoteWins) local.content else remoteFile.content,
             folderId = local.folderId,
             conflictOf = decision.uuid,
         )
         val copy = repository.noteById(copyRowId)
 
-        push(decision)
+        var published = 0
+        if (remoteWins) {
+            // The losing local text is already captured in the copy above, so adopt the remote text
+            // as this note and stand the local change down. Republishing it would only start the
+            // same argument again on the next pass.
+            applyNote(remoteFile, entry)
+            repository.clearOutbox(EntityType.NOTE, decision.uuid)
+        } else {
+            push(decision)
+            published++
+        }
+
         if (copy != null) {
             val copyEntry = remote.create(
                 noteFileName(copy.uuid),
@@ -492,6 +521,7 @@ class NoteSyncEngine(
             )
             repository.setBaseline(EntityType.NOTE, copy.uuid, copyEntry.fileId, copyEntry.version)
             repository.clearOutbox(EntityType.NOTE, copy.uuid)
+            published++
         }
 
         repository.recordConflict(
@@ -503,7 +533,7 @@ class NoteSyncEngine(
             resolution = "keep-both",
             conflictCopyUuid = copy?.uuid,
         )
-        return ConflictOutcome.KEEP_BOTH
+        return Resolution(ConflictOutcome.KEEP_BOTH, published)
     }
 
     // ---- Helpers -----------------------------------------------------------
