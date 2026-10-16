@@ -6,7 +6,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AuthCoreTest {
-
     private fun hex(bytes: ByteArray): String =
         bytes.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
 
@@ -87,10 +86,11 @@ class AuthCoreTest {
 
     @Test
     fun tokenResponseParsesGooglePayload() {
-        val json = """
+        val json =
+            """
             {"access_token":"at","expires_in":3599,"refresh_token":"rt",
              "scope":"openid email","token_type":"Bearer","id_token":"h.p.s"}
-        """.trimIndent()
+            """.trimIndent()
 
         val parsed = authJson.decodeFromString<TokenResponse>(json)
         assertEquals("at", parsed.accessToken)
@@ -106,9 +106,10 @@ class AuthCoreTest {
 
     @Test
     fun emailIsReadFromIdTokenPayload() {
-        val payload = Base64.UrlSafe
-            .encode("""{"email":"someone@example.com","sub":"123"}""".encodeToByteArray())
-            .trimEnd('=')
+        val payload =
+            Base64.UrlSafe
+                .encode("""{"email":"someone@example.com","sub":"123"}""".encodeToByteArray())
+                .trimEnd('=')
         assertEquals("someone@example.com", emailFromIdToken("header.$payload.signature"))
     }
 

@@ -25,9 +25,10 @@ fun MoveNoteDialog(
     onDismiss: () -> Unit,
     onSelect: (folderId: Long) -> Unit,
 ) {
-    val destinations = folders
-        .filter { it.id != currentFolderId }
-        .sortedBy { it.name.lowercase() }
+    val destinations =
+        folders
+            .filter { it.id != currentFolderId }
+            .sortedBy { it.name.lowercase() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -37,18 +38,20 @@ fun MoveNoteDialog(
                 Text("There is nowhere else to move it yet — create another folder first.")
             } else {
                 Column(
-                    modifier = Modifier
-                        .widthIn(max = Dimens.DialogMaxWidth)
-                        .verticalScroll(rememberScrollState()),
+                    modifier =
+                        Modifier
+                            .widthIn(max = Dimens.DialogMaxWidth)
+                            .verticalScroll(rememberScrollState()),
                 ) {
                     destinations.forEach { folder ->
                         Text(
                             text = folder.name,
                             style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelect(folder.id) }
-                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelect(folder.id) }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
                         )
                     }
                 }

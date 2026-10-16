@@ -1,6 +1,5 @@
-import java.util.Properties
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -60,21 +59,23 @@ val generateAppVersion by tasks.registering {
 // Client ids/secrets are per-machine and must not be committed, so they live in the
 // git-ignored local.properties and are compiled into a generated Kotlin file. Missing
 // values are fine: the project still builds and sign-in reports the missing config.
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
-}
+val localProperties =
+    Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.exists()) file.inputStream().use { load(it) }
+    }
 
 val localSecretsDir = layout.buildDirectory.dir("generated/localSecrets/kotlin")
 
 val generateLocalSecrets by tasks.registering {
     val outputDir = localSecretsDir
-    val values = mapOf(
-        "DESKTOP_CLIENT_ID" to localProperties.getProperty("google.desktop.clientId").orEmpty(),
-        "DESKTOP_CLIENT_SECRET" to localProperties.getProperty("google.desktop.clientSecret").orEmpty(),
-        "IOS_CLIENT_ID" to localProperties.getProperty("google.ios.clientId").orEmpty(),
-        "ANDROID_CLIENT_ID" to localProperties.getProperty("google.android.clientId").orEmpty(),
-    )
+    val values =
+        mapOf(
+            "DESKTOP_CLIENT_ID" to localProperties.getProperty("google.desktop.clientId").orEmpty(),
+            "DESKTOP_CLIENT_SECRET" to localProperties.getProperty("google.desktop.clientSecret").orEmpty(),
+            "IOS_CLIENT_ID" to localProperties.getProperty("google.ios.clientId").orEmpty(),
+            "ANDROID_CLIENT_ID" to localProperties.getProperty("google.android.clientId").orEmpty(),
+        )
     inputs.properties(values)
     outputs.dir(outputDir)
 
@@ -100,7 +101,7 @@ val generateLocalSecrets by tasks.registering {
 kotlin {
     listOf(
         iosArm64(),
-        iosSimulatorArm64()
+        iosSimulatorArm64(),
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "Shared"
@@ -123,8 +124,14 @@ kotlin {
 
     android {
         namespace = "com.example.notesai.shared"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
-        minSdk = libs.versions.android.minSdk.get().toInt()
+        compileSdk =
+            libs.versions.android.compileSdk
+                .get()
+                .toInt()
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
 
         compilerOptions {
             jvmTarget = JvmTarget.JVM_11

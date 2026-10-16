@@ -5,8 +5,8 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.decodeFromString
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /**
@@ -28,10 +28,11 @@ private val requiredScopes = listOf(DRIVE_APP_DATA_SCOPE)
  * against the recorded ones, so it could never be satisfied, and the app demanded a fresh
  * sign-in on every single launch no matter how many times you signed in.
  */
-private val scopeAliases = mapOf(
-    "https://www.googleapis.com/auth/userinfo.email" to "email",
-    "https://www.googleapis.com/auth/userinfo.profile" to "profile",
-)
+private val scopeAliases =
+    mapOf(
+        "https://www.googleapis.com/auth/userinfo.email" to "email",
+        "https://www.googleapis.com/auth/userinfo.profile" to "profile",
+    )
 
 private fun canonicalScope(scope: String): String = scopeAliases[scope] ?: scope
 
@@ -45,7 +46,6 @@ class GoogleAuthManager(
     private val store: TokenStore,
     private val http: HttpClient = HttpClient(),
 ) {
-
     /** The signed-in account from persisted tokens, or null if not signed in. */
     fun restore(): AccountInfo? = store.load()?.toAccountInfo()
 
@@ -58,12 +58,15 @@ class GoogleAuthManager(
      * into a lockout, and this check has already been wrong once.
      */
     fun needsReauthorization(): Boolean {
-        val granted = store.load()?.scope
-            ?.split(' ')
-            ?.filter { it.isNotBlank() }
-            ?.map(::canonicalScope)
-            ?.toSet()
-            ?: return false
+        val granted =
+            store
+                .load()
+                ?.scope
+                ?.split(' ')
+                ?.filter { it.isNotBlank() }
+                ?.map(::canonicalScope)
+                ?.toSet()
+                ?: return false
         return !granted.containsAll(requiredScopes.map(::canonicalScope))
     }
 
@@ -79,25 +82,28 @@ class GoogleAuthManager(
         val state = generateState()
         val authUrl = config.authorizationUrl(state = state, codeChallenge = codeChallengeS256(verifier))
 
-        val code = authorizeInteractively(authUrl, config.redirectUri, expectedState = state)
-            ?: throw AuthException("Sign-in was cancelled")
+        val code =
+            authorizeInteractively(authUrl, config.redirectUri, expectedState = state)
+                ?: throw AuthException("Sign-in was cancelled")
 
-        val response = requestToken(
-            "code" to code,
-            "client_id" to config.clientId,
-            "redirect_uri" to config.redirectUri,
-            "grant_type" to "authorization_code",
-            "code_verifier" to verifier,
-            *clientSecretParam(),
-        )
+        val response =
+            requestToken(
+                "code" to code,
+                "client_id" to config.clientId,
+                "redirect_uri" to config.redirectUri,
+                "grant_type" to "authorization_code",
+                "code_verifier" to verifier,
+                *clientSecretParam(),
+            )
 
-        val tokens = AuthTokens(
-            accessToken = response.accessToken,
-            refreshToken = response.refreshToken,
-            expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
-            email = emailFromIdToken(response.idToken),
-            scope = response.scope,
-        )
+        val tokens =
+            AuthTokens(
+                accessToken = response.accessToken,
+                refreshToken = response.refreshToken,
+                expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
+                email = emailFromIdToken(response.idToken),
+                scope = response.scope,
+            )
         store.save(tokens)
         return tokens.toAccountInfo()
     }
@@ -116,35 +122,37 @@ class GoogleAuthManager(
         if (tokens.expiresAtMillis - EXPIRY_SKEW_MILLIS > nowMillis()) return tokens.accessToken
 
         val refreshToken = tokens.refreshToken ?: return null
-        val response = try {
-            requestToken(
-                "client_id" to config.clientId,
-                "refresh_token" to refreshToken,
-                "grant_type" to "refresh_token",
-                *clientSecretParam(),
-            )
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (t: Throwable) {
-            // The refresh token is the long-lived credential, so a rejection here is not a
-            // passing glitch — access was revoked, or the token expired. An OAuth client whose
-            // consent screen is still in "Testing" mode expires refresh tokens after 7 days,
-            // which presents as "it worked last week and now it doesn't".
-            //
-            // Returning null instead would surface as "not signed in to Google Drive", which
-            // is both wrong (the app is still showing the account) and useless.
-            throw AuthException(
-                "Google would not renew the sign-in, so syncing has stopped. Sign out and " +
-                    "sign in again. (${t.message ?: t})",
-            )
-        }
+        val response =
+            try {
+                requestToken(
+                    "client_id" to config.clientId,
+                    "refresh_token" to refreshToken,
+                    "grant_type" to "refresh_token",
+                    *clientSecretParam(),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                // The refresh token is the long-lived credential, so a rejection here is not a
+                // passing glitch — access was revoked, or the token expired. An OAuth client whose
+                // consent screen is still in "Testing" mode expires refresh tokens after 7 days,
+                // which presents as "it worked last week and now it doesn't".
+                //
+                // Returning null instead would surface as "not signed in to Google Drive", which
+                // is both wrong (the app is still showing the account) and useless.
+                throw AuthException(
+                    "Google would not renew the sign-in, so syncing has stopped. Sign out and " +
+                        "sign in again. (${t.message ?: t})",
+                )
+            }
 
-        val refreshed = tokens.copy(
-            accessToken = response.accessToken,
-            refreshToken = response.refreshToken ?: tokens.refreshToken,
-            expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
-            scope = response.scope ?: tokens.scope,
-        )
+        val refreshed =
+            tokens.copy(
+                accessToken = response.accessToken,
+                refreshToken = response.refreshToken ?: tokens.refreshToken,
+                expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
+                scope = response.scope ?: tokens.scope,
+            )
         store.save(refreshed)
         return refreshed.accessToken
     }
@@ -153,9 +161,10 @@ class GoogleAuthManager(
         config.clientSecret?.let { arrayOf("client_secret" to it) } ?: emptyArray()
 
     private suspend fun requestToken(vararg params: Pair<String, String>): TokenResponse {
-        val body = Parameters.build {
-            params.forEach { (key, value) -> append(key, value) }
-        }
+        val body =
+            Parameters.build {
+                params.forEach { (key, value) -> append(key, value) }
+            }
         val response = http.submitForm(GOOGLE_TOKEN_ENDPOINT, body)
         val text = response.bodyAsText()
         if (!response.status.isSuccess()) {

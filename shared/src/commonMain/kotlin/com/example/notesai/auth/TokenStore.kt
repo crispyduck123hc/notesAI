@@ -13,7 +13,9 @@ import kotlinx.serialization.encodeToString
  */
 interface TokenStore {
     fun load(): AuthTokens?
+
     fun save(tokens: AuthTokens)
+
     fun clear()
 }
 
@@ -24,7 +26,6 @@ class MetadataTokenStore(
     private val remove: (String) -> Unit,
     private val key: String = TOKENS_KEY,
 ) : TokenStore {
-
     override fun load(): AuthTokens? =
         read(key)?.let { runCatching { authJson.decodeFromString<AuthTokens>(it) }.getOrNull() }
 

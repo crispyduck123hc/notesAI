@@ -1,0 +1,7 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>NewLineAtEndOfFile:MainActivity.kt$com.example.notesai.MainActivity.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

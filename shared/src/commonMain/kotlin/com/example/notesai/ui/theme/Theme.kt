@@ -20,25 +20,27 @@ private val IrisMist = Color(0xFFE8E3FF)
 private val Slate = Color(0xFF2B2A33)
 private val Paper = Color(0xFFFDFCFF)
 
-private val LightColors = lightColorScheme(
-    primary = Iris,
-    onPrimary = Color.White,
-    primaryContainer = IrisPale,
-    onPrimaryContainer = Slate,
-    secondaryContainer = IrisPale,
-    onSecondaryContainer = Slate,
-    background = Paper,
-    surface = Paper,
-)
+private val LightColors =
+    lightColorScheme(
+        primary = Iris,
+        onPrimary = Color.White,
+        primaryContainer = IrisPale,
+        onPrimaryContainer = Slate,
+        secondaryContainer = IrisPale,
+        onSecondaryContainer = Slate,
+        background = Paper,
+        surface = Paper,
+    )
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFC5BCF5),
-    onPrimary = Slate,
-    primaryContainer = IrisDeep,
-    onPrimaryContainer = IrisMist,
-    secondaryContainer = IrisDeep,
-    onSecondaryContainer = IrisMist,
-)
+private val DarkColors =
+    darkColorScheme(
+        primary = Color(0xFFC5BCF5),
+        onPrimary = Slate,
+        primaryContainer = IrisDeep,
+        onPrimaryContainer = IrisMist,
+        secondaryContainer = IrisDeep,
+        onSecondaryContainer = IrisMist,
+    )
 
 @Composable
 fun NotesAiTheme(

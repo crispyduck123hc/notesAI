@@ -9,16 +9,16 @@ import kotlin.test.assertTrue
  * mapping, using the bodies Google actually returns.
  */
 class DriveFailureTest {
-
     @Test
     fun driveApiDisabledTellsYouToEnableIt() {
         // What a Cloud project with no Drive API enabled returns.
-        val body = """
+        val body =
+            """
             {"error":{"code":403,"message":"Google Drive API has not been used in project 123456
             before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=123456
             then retry.","errors":[{"message":"...","domain":"usageLimits","reason":"accessNotConfigured"}],
             "status":"PERMISSION_DENIED"}}
-        """.trimIndent()
+            """.trimIndent()
 
         val message = describeDriveFailure(403, body)
 
@@ -31,10 +31,11 @@ class DriveFailureTest {
     @Test
     fun missingScopeTellsYouToSignInAgain() {
         // Authorised before the drive.appdata scope was requested.
-        val body = """
+        val body =
+            """
             {"error":{"code":403,"message":"Request had insufficient authentication scopes.",
             "errors":[{"reason":"insufficientPermissions"}],"status":"PERMISSION_DENIED"}}
-        """.trimIndent()
+            """.trimIndent()
 
         val message = describeDriveFailure(403, body)
 
@@ -44,10 +45,11 @@ class DriveFailureTest {
 
     @Test
     fun fullDriveIsReportedAsSuch() {
-        val body = """
+        val body =
+            """
             {"error":{"code":403,"message":"The user's Drive storage quota has been exceeded.",
             "errors":[{"reason":"storageQuotaExceeded"}]}}
-        """.trimIndent()
+            """.trimIndent()
 
         val message = describeDriveFailure(403, body)
 
@@ -57,10 +59,11 @@ class DriveFailureTest {
 
     @Test
     fun throttlingIsReportedAsTemporary() {
-        val body = """
+        val body =
+            """
             {"error":{"code":403,"message":"Rate Limit Exceeded",
             "errors":[{"reason":"userRateLimitExceeded"}]}}
-        """.trimIndent()
+            """.trimIndent()
 
         val message = describeDriveFailure(403, body)
 
@@ -72,10 +75,11 @@ class DriveFailureTest {
     fun expiredCredentialsSaySoEvenWhenDriveCallsThem403() {
         // A stale token can come back as 403 rather than 401, which is why the wording is
         // checked as well as the status code.
-        val body = """
+        val body =
+            """
             {"error":{"code":403,"message":"Invalid Credentials",
             "errors":[{"reason":"authError","locationType":"header"}]}}
-        """.trimIndent()
+            """.trimIndent()
 
         val message = describeDriveFailure(403, body)
 

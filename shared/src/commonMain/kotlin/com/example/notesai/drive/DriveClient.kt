@@ -49,7 +49,9 @@ private data class DrivePage(
 
 /** Drive's failure envelope: `{"error":{"code":403,"message":"…","errors":[{"reason":"…"}]}}`. */
 @Serializable
-private data class DriveErrorEnvelope(val error: DriveErrorBody? = null)
+private data class DriveErrorEnvelope(
+    val error: DriveErrorBody? = null,
+)
 
 @Serializable
 private data class DriveErrorBody(
@@ -60,9 +62,13 @@ private data class DriveErrorBody(
 )
 
 @Serializable
-private data class DriveErrorDetail(val reason: String? = null)
+private data class DriveErrorDetail(
+    val reason: String? = null,
+)
 
-class DriveException(message: String) : Exception(message)
+class DriveException(
+    message: String,
+) : Exception(message)
 
 /**
  * Thin wrapper over the Drive v3 REST API, scoped to the app data folder.
@@ -84,13 +90,14 @@ class DriveClient(
         // Paging matters: a truncated listing makes remote files look absent, which would
         // silently strand data (and, with tombstone GC, could look like a deletion).
         do {
-            val response = http.get(filesUrl) {
-                bearer()
-                parameter("spaces", APP_DATA_FOLDER)
-                parameter("fields", "nextPageToken,files(id,name,version,headRevisionId,modifiedTime,md5Checksum)")
-                parameter("pageSize", PAGE_SIZE)
-                pageToken?.let { parameter("pageToken", it) }
-            }
+            val response =
+                http.get(filesUrl) {
+                    bearer()
+                    parameter("spaces", APP_DATA_FOLDER)
+                    parameter("fields", "nextPageToken,files(id,name,version,headRevisionId,modifiedTime,md5Checksum)")
+                    parameter("pageSize", PAGE_SIZE)
+                    pageToken?.let { parameter("pageToken", it) }
+                }
             val page = driveJson.decodeFromString<DrivePage>(response.requireSuccess())
             all += page.files
             pageToken = page.nextPageToken
@@ -99,10 +106,11 @@ class DriveClient(
     }
 
     suspend fun downloadText(fileId: String): String {
-        val response = http.get("$filesUrl/$fileId") {
-            bearer()
-            parameter("alt", "media")
-        }
+        val response =
+            http.get("$filesUrl/$fileId") {
+                bearer()
+                parameter("alt", "media")
+            }
         return response.requireSuccess()
     }
 
@@ -117,13 +125,14 @@ class DriveClient(
         existingFileId: String? = null,
     ): DriveFile {
         val fileId = existingFileId ?: createMetadataOnlyFile(fileName)
-        val response = http.patch("$uploadUrl/$fileId") {
-            bearer()
-            parameter("uploadType", "media")
-            parameter("fields", "id,name,version,headRevisionId,modifiedTime,md5Checksum")
-            contentType(ContentType.Application.Json)
-            setBody(content)
-        }
+        val response =
+            http.patch("$uploadUrl/$fileId") {
+                bearer()
+                parameter("uploadType", "media")
+                parameter("fields", "id,name,version,headRevisionId,modifiedTime,md5Checksum")
+                contentType(ContentType.Application.Json)
+                setBody(content)
+            }
         return driveJson.decodeFromString<DriveFile>(response.requireSuccess())
     }
 
@@ -138,18 +147,20 @@ class DriveClient(
      */
     private suspend fun createMetadataOnlyFile(fileName: String): String {
         val metadata = """{"name":${driveJson.encodeToString(fileName)},"parents":["$APP_DATA_FOLDER"]}"""
-        val response = http.post(filesUrl) {
-            bearer()
-            parameter("fields", "id")
-            contentType(ContentType.Application.Json)
-            setBody(metadata)
-        }
+        val response =
+            http.post(filesUrl) {
+                bearer()
+                parameter("fields", "id")
+                contentType(ContentType.Application.Json)
+                setBody(metadata)
+            }
         return driveJson.decodeFromString<DriveFile>(response.requireSuccess()).id
     }
 
     private suspend fun HttpRequestBuilder.bearer() {
-        val token = accessToken()
-            ?: throw DriveException("Not signed in to Google Drive")
+        val token =
+            accessToken()
+                ?: throw DriveException("Not signed in to Google Drive")
         header(HttpHeaders.Authorization, "Bearer $token")
     }
 }
@@ -170,39 +181,44 @@ private suspend fun HttpResponse.requireSuccess(allowEmpty: Boolean = false): St
  * the status code leaves the reader with nowhere to go, which is precisely what happens the
  * first time this app meets a 403.
  */
-internal fun describeDriveFailure(statusCode: Int, body: String): String {
+internal fun describeDriveFailure(
+    statusCode: Int,
+    body: String,
+): String {
     val error = runCatching { driveJson.decodeFromString<DriveErrorEnvelope>(body) }.getOrNull()?.error
     val reason = error?.errors?.firstOrNull()?.reason ?: error?.status
     val explanation = error?.message?.takeIf { it.isNotBlank() } ?: body.take(300)
 
-    val hint = when {
-        reason == "accessNotConfigured" ||
-            explanation.contains("has not been used in project", ignoreCase = true) ||
-            explanation.contains("is disabled", ignoreCase = true) ->
-            "The Google Drive API is switched off for the Cloud project this app's OAuth " +
-                "client belongs to. Switch it on at " +
-                "https://console.cloud.google.com/apis/library/drive.googleapis.com — then " +
-                "give it a minute or two to take effect."
+    val hint =
+        when {
+            reason == "accessNotConfigured" ||
+                explanation.contains("has not been used in project", ignoreCase = true) ||
+                explanation.contains("is disabled", ignoreCase = true) ->
+                "The Google Drive API is switched off for the Cloud project this app's OAuth " +
+                    "client belongs to. Switch it on at " +
+                    "https://console.cloud.google.com/apis/library/drive.googleapis.com — then " +
+                    "give it a minute or two to take effect."
 
-        reason == "insufficientPermissions" ||
-            explanation.contains("insufficient authentication scopes", ignoreCase = true) ->
-            "The saved sign-in does not include Google Drive access. Sign out and sign in " +
-                "again so the app can ask for it."
+            reason == "insufficientPermissions" ||
+                explanation.contains("insufficient authentication scopes", ignoreCase = true) ->
+                "The saved sign-in does not include Google Drive access. Sign out and sign in " +
+                    "again so the app can ask for it."
 
-        reason == "storageQuotaExceeded" ->
-            "Your Google Drive is out of space, so the upload was refused."
+            reason == "storageQuotaExceeded" ->
+                "Your Google Drive is out of space, so the upload was refused."
 
-        reason == "rateLimitExceeded" || reason == "userRateLimitExceeded" ||
-            explanation.contains("Rate Limit Exceeded", ignoreCase = true) ->
-            "Google is throttling this app for the moment. That clears by itself within a " +
-                "minute or two."
+            reason == "rateLimitExceeded" ||
+                reason == "userRateLimitExceeded" ||
+                explanation.contains("Rate Limit Exceeded", ignoreCase = true) ->
+                "Google is throttling this app for the moment. That clears by itself within a " +
+                    "minute or two."
 
-        statusCode == 401 ||
-            explanation.contains("Invalid Credentials", ignoreCase = true) ->
-            "The sign-in is no longer valid. Sign out and sign in again."
+            statusCode == 401 ||
+                explanation.contains("Invalid Credentials", ignoreCase = true) ->
+                "The sign-in is no longer valid. Sign out and sign in again."
 
-        else -> null
-    }
+            else -> null
+        }
 
     return buildString {
         append("Drive request failed (")

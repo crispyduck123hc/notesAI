@@ -15,7 +15,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Clock
 
-class NoteRepository(private val driver: SqlDriver) {
+class NoteRepository(
+    private val driver: SqlDriver,
+) {
     /**
      * Production constructor. The database name is per-account (see [accountDatabaseName]),
      * so signing in as a different account opens an entirely different local store.
@@ -55,7 +57,10 @@ class NoteRepository(private val driver: SqlDriver) {
 
     fun metadata(key: String): String? = queries.selectMetadata(key).executeAsOneOrNull()
 
-    fun putMetadata(key: String, value: String) = queries.upsertMetadata(key, value)
+    fun putMetadata(
+        key: String,
+        value: String,
+    ) = queries.upsertMetadata(key, value)
 
     fun removeMetadata(key: String) = queries.deleteMetadata(key)
 
@@ -90,15 +95,19 @@ class NoteRepository(private val driver: SqlDriver) {
         entityType: String,
         uuidOf: () -> String?,
         block: () -> T,
-    ): T? = queries.transactionWithResult {
-        val uuid = uuidOf() ?: return@transactionWithResult null
-        val result = block()
-        markDirty(entityType, uuid)
-        result
-    }
+    ): T? =
+        queries.transactionWithResult {
+            val uuid = uuidOf() ?: return@transactionWithResult null
+            val result = block()
+            markDirty(entityType, uuid)
+            result
+        }
 
-    fun addFolder(name: String, parentId: Long = ROOT_FOLDER_ID): Long {
-        return queries.transactionWithResult {
+    fun addFolder(
+        name: String,
+        parentId: Long = ROOT_FOLDER_ID,
+    ): Long =
+        queries.transactionWithResult {
             val uuid = randomUuid()
             queries.insertFolder(name = name, parentId = parentId, uuid = uuid, updatedAt = now())
             // Read the generated id before anything else writes: `last_insert_rowid()` is
@@ -107,9 +116,11 @@ class NoteRepository(private val driver: SqlDriver) {
             markDirty(EntityType.FOLDER, uuid)
             id
         }
-    }
 
-    fun renameFolder(id: Long, name: String) {
+    fun renameFolder(
+        id: Long,
+        name: String,
+    ) {
         val existing = queries.selectFolderById(id).executeAsOneOrNull() ?: return
         if (existing.name == name) return
 
@@ -131,7 +142,10 @@ class NoteRepository(private val driver: SqlDriver) {
         }
     }
 
-    private fun softDeleteFolderRecursive(id: Long, timestamp: Long) {
+    private fun softDeleteFolderRecursive(
+        id: Long,
+        timestamp: Long,
+    ) {
         queries.selectChildFolders(id).executeAsList().forEach {
             softDeleteFolderRecursive(it.id, timestamp)
         }
@@ -145,8 +159,7 @@ class NoteRepository(private val driver: SqlDriver) {
 
     // ---- Notes ------------------------------------------------------------
 
-    fun getNote(id: Long): Flow<NoteEntity?> =
-        queries.selectNoteById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
+    fun getNote(id: Long): Flow<NoteEntity?> = queries.selectNoteById(id).asFlow().mapToOneOrNull(Dispatchers.Default)
 
     fun noteById(id: Long): NoteEntity? = queries.selectNoteById(id).executeAsOneOrNull()
 
@@ -175,7 +188,10 @@ class NoteRepository(private val driver: SqlDriver) {
         }
     }
 
-    fun updateNote(id: Long, text: String) {
+    fun updateNote(
+        id: Long,
+        text: String,
+    ) {
         val existing = queries.selectNoteById(id).executeAsOneOrNull() ?: return
         val title = text.noteTitle()
 
@@ -210,33 +226,36 @@ class NoteRepository(private val driver: SqlDriver) {
 
     fun allBaselines(): List<SyncBaseline> = queries.selectAllBaselines().executeAsList()
 
-    fun noteByUuid(uuid: String): NoteEntity? =
-        queries.selectNoteByUuid(uuid).executeAsOneOrNull()
+    fun noteByUuid(uuid: String): NoteEntity? = queries.selectNoteByUuid(uuid).executeAsOneOrNull()
 
-    fun folderByUuid(uuid: String): FolderEntity? =
-        queries.selectFolderByUuid(uuid).executeAsOneOrNull()
+    fun folderByUuid(uuid: String): FolderEntity? = queries.selectFolderByUuid(uuid).executeAsOneOrNull()
 
-    fun folderUuidById(id: Long): String? =
-        queries.selectFolderById(id).executeAsOneOrNull()?.uuid
+    fun folderUuidById(id: Long): String? = queries.selectFolderById(id).executeAsOneOrNull()?.uuid
 
-    fun folderIdByUuid(uuid: String): Long? =
-        queries.selectFolderByUuid(uuid).executeAsOneOrNull()?.id
+    fun folderIdByUuid(uuid: String): Long? = queries.selectFolderByUuid(uuid).executeAsOneOrNull()?.id
 
     // ---- Sync: outbox -----------------------------------------------------
 
     fun pendingOutbox(): List<SyncOutbox> = queries.selectOutbox().executeAsList()
 
-    fun clearOutbox(entityType: String, entityUuid: String) =
-        queries.deleteOutbox(entityType = entityType, entityUuid = entityUuid)
+    fun clearOutbox(
+        entityType: String,
+        entityUuid: String,
+    ) = queries.deleteOutbox(entityType = entityType, entityUuid = entityUuid)
 
-    private fun markDirty(entityType: String, entityUuid: String) {
+    private fun markDirty(
+        entityType: String,
+        entityUuid: String,
+    ) {
         queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = now())
     }
 
     // ---- Sync: baseline ---------------------------------------------------
 
-    fun baseline(entityType: String, entityUuid: String): SyncBaseline? =
-        queries.selectBaseline(entityType = entityType, entityUuid = entityUuid).executeAsOneOrNull()
+    fun baseline(
+        entityType: String,
+        entityUuid: String,
+    ): SyncBaseline? = queries.selectBaseline(entityType = entityType, entityUuid = entityUuid).executeAsOneOrNull()
 
     fun setBaseline(
         entityType: String,
@@ -273,8 +292,11 @@ class NoteRepository(private val driver: SqlDriver) {
             )
             // A keep-both conflict is documented, not queued for a decision.
             if (resolution != null) {
-                val id = queries.selectUnresolvedConflict(entityType, entityUuid)
-                    .executeAsOneOrNull()?.id
+                val id =
+                    queries
+                        .selectUnresolvedConflict(entityType, entityUuid)
+                        .executeAsOneOrNull()
+                        ?.id
                 if (id != null) {
                     queries.resolveConflict(
                         resolvedAt = now(),
@@ -287,10 +309,12 @@ class NoteRepository(private val driver: SqlDriver) {
         }
     }
 
-    fun conflictById(id: Long): ConflictInbox? =
-        queries.selectConflictById(id).executeAsOneOrNull()
+    fun conflictById(id: Long): ConflictInbox? = queries.selectConflictById(id).executeAsOneOrNull()
 
-    fun resolveConflictRow(id: Long, resolution: String) = queries.resolveConflict(
+    fun resolveConflictRow(
+        id: Long,
+        resolution: String,
+    ) = queries.resolveConflict(
         resolvedAt = now(),
         resolution = resolution,
         conflictCopyUuid = null,
@@ -300,21 +324,27 @@ class NoteRepository(private val driver: SqlDriver) {
     // ---- Sync: tombstones / GC -------------------------------------------
 
     /** Tombstoned records deleted before [threshold], with their remote file if published. */
-    fun tombstonesOlderThan(threshold: Long): List<Tombstone> = buildList {
-        queries.selectPurgeableNotes(threshold).executeAsList().forEach { note ->
-            add(Tombstone(EntityType.NOTE, note.uuid, baseline(EntityType.NOTE, note.uuid)?.remoteFileId))
+    fun tombstonesOlderThan(threshold: Long): List<Tombstone> =
+        buildList {
+            queries.selectPurgeableNotes(threshold).executeAsList().forEach { note ->
+                add(Tombstone(EntityType.NOTE, note.uuid, baseline(EntityType.NOTE, note.uuid)?.remoteFileId))
+            }
+            queries.selectPurgeableFolders(threshold).executeAsList().forEach { folder ->
+                if (folder.uuid == ROOT_FOLDER_UUID) return@forEach
+                add(Tombstone(EntityType.FOLDER, folder.uuid, baseline(EntityType.FOLDER, folder.uuid)?.remoteFileId))
+            }
         }
-        queries.selectPurgeableFolders(threshold).executeAsList().forEach { folder ->
-            if (folder.uuid == ROOT_FOLDER_UUID) return@forEach
-            add(Tombstone(EntityType.FOLDER, folder.uuid, baseline(EntityType.FOLDER, folder.uuid)?.remoteFileId))
-        }
-    }
 
-    fun hasOutboxEntry(entityType: String, entityUuid: String): Boolean =
-        queries.selectOutboxEntry(entityType, entityUuid).executeAsOneOrNull() != null
+    fun hasOutboxEntry(
+        entityType: String,
+        entityUuid: String,
+    ): Boolean = queries.selectOutboxEntry(entityType, entityUuid).executeAsOneOrNull() != null
 
     /** Forgets a tombstone locally: row, outbox entry and baseline all go. */
-    fun purgeLocal(entityType: String, entityUuid: String) {
+    fun purgeLocal(
+        entityType: String,
+        entityUuid: String,
+    ) {
         queries.transaction {
             when (entityType) {
                 EntityType.FOLDER -> queries.deleteFolderByUuid(entityUuid)
@@ -325,12 +355,17 @@ class NoteRepository(private val driver: SqlDriver) {
         }
     }
 
-    fun clearBaseline(entityType: String, entityUuid: String) =
-        queries.deleteBaseline(entityType = entityType, entityUuid = entityUuid)
+    fun clearBaseline(
+        entityType: String,
+        entityUuid: String,
+    ) = queries.deleteBaseline(entityType = entityType, entityUuid = entityUuid)
 
     // ---- Notes: moving ----------------------------------------------------
 
-    fun moveNote(id: Long, folderId: Long) {
+    fun moveNote(
+        id: Long,
+        folderId: Long,
+    ) {
         val existing = queries.selectNoteById(id).executeAsOneOrNull() ?: return
         if (existing.folderId == folderId) return
 
@@ -339,22 +374,26 @@ class NoteRepository(private val driver: SqlDriver) {
         }
     }
 
-    fun hasUnresolvedConflict(entityType: String, entityUuid: String): Boolean =
-        queries.selectUnresolvedConflict(entityType, entityUuid).executeAsOneOrNull() != null
+    fun hasUnresolvedConflict(
+        entityType: String,
+        entityUuid: String,
+    ): Boolean = queries.selectUnresolvedConflict(entityType, entityUuid).executeAsOneOrNull() != null
 
     /**
      * Records a failed push against that record. The queue entry stays, so the next sync
      * retries — the counter is there to make "this keeps failing" visible rather than silent.
      */
-    fun recordOutboxAttempt(entityType: String, entityUuid: String, error: String?) =
-        queries.recordOutboxAttempt(
-            lastError = error,
-            entityType = entityType,
-            entityUuid = entityUuid,
-        )
+    fun recordOutboxAttempt(
+        entityType: String,
+        entityUuid: String,
+        error: String?,
+    ) = queries.recordOutboxAttempt(
+        lastError = error,
+        entityType = entityType,
+        entityUuid = entityUuid,
+    )
 
-    fun unresolvedConflicts(): List<ConflictInbox> =
-        queries.selectUnresolvedConflicts().executeAsList()
+    fun unresolvedConflicts(): List<ConflictInbox> = queries.selectUnresolvedConflicts().executeAsList()
 
     // ---- Sync: apply remote changes --------------------------------------
     // These deliberately do NOT mark anything dirty: the change already exists remotely.

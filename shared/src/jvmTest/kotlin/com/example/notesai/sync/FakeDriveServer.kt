@@ -13,9 +13,14 @@ import java.util.concurrent.atomic.AtomicLong
  * token, and the `files` list envelope — can be exercised without OAuth credentials or a
  * live Google account.
  */
-class FakeDriveServer(private val maxPageSize: Int = Int.MAX_VALUE) {
-
-    private data class Stored(val name: String, val content: String, val version: Long)
+class FakeDriveServer(
+    private val maxPageSize: Int = Int.MAX_VALUE,
+) {
+    private data class Stored(
+        val name: String,
+        val content: String,
+        val version: Long,
+    )
 
     private val files = linkedMapOf<String, Stored>()
     private val nextId = AtomicLong(1)
@@ -38,7 +43,10 @@ class FakeDriveServer(private val maxPageSize: Int = Int.MAX_VALUE) {
     fun stop() = server.stop(0)
 
     fun contentOf(name: String): String? =
-        files.entries.firstOrNull { it.value.name == name }?.value?.content
+        files.entries
+            .firstOrNull { it.value.name == name }
+            ?.value
+            ?.content
 
     private fun handle(exchange: HttpExchange) {
         val path = exchange.requestURI.path
@@ -78,23 +86,37 @@ class FakeDriveServer(private val maxPageSize: Int = Int.MAX_VALUE) {
     }
 
     private fun create(body: String): String {
-        val name = NAME_PATTERN.find(body)?.groupValues?.get(1)
-            ?: error("create request had no name: $body")
+        val name =
+            NAME_PATTERN.find(body)?.groupValues?.get(1)
+                ?: error("create request had no name: $body")
         val id = "file-${nextId.getAndIncrement()}"
         files[id] = Stored(name = name, content = "", version = nextVersion.getAndIncrement())
         return fileJson(id, files.getValue(id))
     }
 
-    private fun update(fileId: String, content: String): String {
+    private fun update(
+        fileId: String,
+        content: String,
+    ): String {
         val existing = files[fileId] ?: error("update for unknown file $fileId")
         files[fileId] = existing.copy(content = content, version = nextVersion.getAndIncrement())
         return fileJson(fileId, files.getValue(fileId))
     }
 
     private fun listJson(query: String): String {
-        val requested = PAGE_SIZE_PATTERN.find(query)?.groupValues?.get(1)?.toIntOrNull() ?: maxPageSize
+        val requested =
+            PAGE_SIZE_PATTERN
+                .find(query)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull() ?: maxPageSize
         val size = minOf(requested, maxPageSize)
-        val offset = PAGE_TOKEN_PATTERN.find(query)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val offset =
+            PAGE_TOKEN_PATTERN
+                .find(query)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull() ?: 0
         val page = files.entries.drop(offset).take(size)
         val nextOffset = offset + page.size
 
@@ -111,10 +133,17 @@ class FakeDriveServer(private val maxPageSize: Int = Int.MAX_VALUE) {
     }
 
     /** `version` is a JSON number, matching the real Drive resource. */
-    private fun fileJson(id: String, file: Stored): String =
+    private fun fileJson(
+        id: String,
+        file: Stored,
+    ): String =
         """{"id":"$id","name":"${file.name}","version":${file.version},"headRevisionId":"rev-${file.version}","md5Checksum":"md5-${file.version}"}"""
 
-    private fun respond(exchange: HttpExchange, code: Int, payload: String) {
+    private fun respond(
+        exchange: HttpExchange,
+        code: Int,
+        payload: String,
+    ) {
         exchange.responseHeaders.add("Content-Type", "application/json")
         if (code == 204) {
             exchange.sendResponseHeaders(204, -1)

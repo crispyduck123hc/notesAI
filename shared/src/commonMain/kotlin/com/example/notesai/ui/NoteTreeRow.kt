@@ -25,7 +25,6 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.example.notesai.ui.theme.Dimens
 
 /**
@@ -47,16 +46,19 @@ internal fun NoteTreeRow(
 
     Box {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.small)
-                .background(
-                    if (selected) MaterialTheme.colorScheme.secondaryContainer
-                    else Color.Transparent
-                )
-                .clickable(onClick = onClick)
-                .onSecondaryClick { menuOpen = true }
-                .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * item.depth),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.small)
+                    .background(
+                        if (selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            Color.Transparent
+                        },
+                    ).clickable(onClick = onClick)
+                    .onSecondaryClick { menuOpen = true }
+                    .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * item.depth),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.width(Dimens.TreeChevronWidth), contentAlignment = Alignment.Center) {
@@ -122,14 +124,15 @@ internal fun NoteTreeRow(
  * populated on pointer-capable platforms — so this is desktop behaviour that quietly does
  * nothing on touch.
  */
-private fun Modifier.onSecondaryClick(action: () -> Unit): Modifier = pointerInput(Unit) {
-    awaitPointerEventScope {
-        while (true) {
-            val event = awaitPointerEvent()
-            if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
-                event.changes.forEach { it.consume() }
-                action()
+private fun Modifier.onSecondaryClick(action: () -> Unit): Modifier =
+    pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                    event.changes.forEach { it.consume() }
+                    action()
+                }
             }
         }
     }
-}

@@ -2,8 +2,11 @@ package com.example.notesai.sync
 
 /** Test double for a remote file store, with helpers to simulate another device. */
 class InMemoryRemote : SyncRemote {
-
-    private data class Stored(val name: String, val content: String, val version: Int)
+    private data class Stored(
+        val name: String,
+        val content: String,
+        val version: Int,
+    )
 
     private val files = linkedMapOf<String, Stored>()
     private var nextId = 1
@@ -21,7 +24,10 @@ class InMemoryRemote : SyncRemote {
     override suspend fun download(fileId: String): String =
         files[fileId]?.content ?: error("no remote file with id $fileId")
 
-    override suspend fun create(name: String, content: String): RemoteEntry {
+    override suspend fun create(
+        name: String,
+        content: String,
+    ): RemoteEntry {
         if (name in failOn) error("simulated upload failure for $name")
         val id = "file-${nextId++}"
         val version = nextVersion++
@@ -29,7 +35,10 @@ class InMemoryRemote : SyncRemote {
         return RemoteEntry(id, name, version.toString())
     }
 
-    override suspend fun update(fileId: String, content: String): RemoteEntry {
+    override suspend fun update(
+        fileId: String,
+        content: String,
+    ): RemoteEntry {
         val existing = files[fileId] ?: error("no remote file with id $fileId")
         if (existing.name in failOn) error("simulated upload failure for ${existing.name}")
         val version = nextVersion++
@@ -45,14 +54,22 @@ class InMemoryRemote : SyncRemote {
 
     fun fileIdFor(name: String): String? = files.entries.firstOrNull { it.value.name == name }?.key
 
-    fun contentOf(name: String): String? = files.entries.firstOrNull { it.value.name == name }?.value?.content
+    fun contentOf(name: String): String? =
+        files.entries
+            .firstOrNull { it.value.name == name }
+            ?.value
+            ?.content
 
     fun dump(): List<Pair<String, String>> = files.values.map { it.name to it.content }
 
     /** Rewrites a file as if another device had edited and uploaded it. */
-    fun simulateRemoteEdit(name: String, transform: (String) -> String) {
-        val (id, existing) = files.entries.firstOrNull { it.value.name == name }
-            ?: error("no remote file named $name")
+    fun simulateRemoteEdit(
+        name: String,
+        transform: (String) -> String,
+    ) {
+        val (id, existing) =
+            files.entries.firstOrNull { it.value.name == name }
+                ?: error("no remote file named $name")
         val version = nextVersion++
         files[id] = existing.copy(content = transform(existing.content), version = version)
     }

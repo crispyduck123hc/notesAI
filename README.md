@@ -397,6 +397,33 @@ Issues and pull requests are welcome. A few things worth knowing first:
 
 - **Tests and builds**: `./gradlew :shared:jvmTest` should be green, and `:desktopApp:compileKotlin`,
   `:androidApp:assembleDebug` and `:shared:linkDebugFrameworkIosSimulatorArm64` should all build.
+- **Formatting and static analysis** run as part of `check`, and in CI:
+
+  ```bash
+  ./gradlew ktlintCheck detekt    # what CI enforces
+  ./gradlew ktlintFormat          # fix formatting automatically
+  ```
+
+  ktlint covers formatting and can fix its own findings. detekt covers code smells — complexity,
+  swallowed exceptions, suspicious constructs. Both deliberately skip generated code: SQLDelight's
+  interfaces, Compose's resource collectors, and the secret and version constants the build writes.
+  Their rule overrides live in [`.editorconfig`](.editorconfig) and
+  [`config/detekt/detekt.yml`](config/detekt/detekt.yml), mostly to stop Compose idioms (long
+  parameter lists, capitalised `@Composable` functions) being reported as problems.
+
+  detekt also has a **per-module baseline** (`<module>/detekt-baseline.xml`) recording the findings
+  that already existed when it was introduced, so it gates new code without demanding a cleanup
+  first. When you fix one, run `./gradlew detektBaseline` and the baseline is rewritten without it.
+  Empty baselines are the goal.
+
+  All four pieces of that configuration are committed on purpose — `.editorconfig`,
+  `config/detekt/detekt.yml` and the baselines are project settings, not personal ones. CI lints with
+  them; without them CI would disagree with your machine.
+
+  There is deliberately no pre-commit hook: the checks run in CI on every push, and
+  `./gradlew check` gives the same answer locally before you push. A hook would have to be installed
+  separately on each machine anyway, since git does not version `.git/hooks`.
+
 - **Lint the workflow files before pushing.** GitHub rejects a workflow file outright when it uses a
   context where one isn't available — `secrets` in a step's `if:`, for example — and the failure is
   silent: no job runs, so nothing goes red. `actionlint` catches that class of mistake locally, and

@@ -47,26 +47,29 @@ fun NotesScreen(
 
     // Reads tombstones too (repository lookups, not `notes`), because a delete-vs-edit
     // conflict's local side is precisely a row the normal query hides.
-    val conflictItems = remember(conflicts) {
-        conflicts.map { conflict ->
-            val note = if (conflict.entityType == EntityType.NOTE) {
-                repository.noteByUuid(conflict.entityUuid)
-            } else {
-                null
+    val conflictItems =
+        remember(conflicts) {
+            conflicts.map { conflict ->
+                val note =
+                    if (conflict.entityType == EntityType.NOTE) {
+                        repository.noteByUuid(conflict.entityUuid)
+                    } else {
+                        null
+                    }
+                val folder =
+                    if (conflict.entityType == EntityType.FOLDER) {
+                        repository.folderByUuid(conflict.entityUuid)
+                    } else {
+                        null
+                    }
+                ConflictUiItem(
+                    id = conflict.id,
+                    label = note?.title?.ifBlank { "Untitled note" } ?: folder?.name ?: "Record",
+                    kind = conflict.kind,
+                    localIsDeletion = note?.deletedAt != null,
+                )
             }
-            val folder = if (conflict.entityType == EntityType.FOLDER) {
-                repository.folderByUuid(conflict.entityUuid)
-            } else {
-                null
-            }
-            ConflictUiItem(
-                id = conflict.id,
-                label = note?.title?.ifBlank { "Untitled note" } ?: folder?.name ?: "Record",
-                kind = conflict.kind,
-                localIsDeletion = note?.deletedAt != null,
-            )
         }
-    }
 
     Row(modifier = Modifier.fillMaxSize()) {
         NoteTreePane(
