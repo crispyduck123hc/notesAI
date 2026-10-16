@@ -9,7 +9,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/**
+/*
  * The remote projection of the local database.
  *
  * SQLite stays the source of truth; these DTOs are the serialised form pushed to /
@@ -62,10 +62,11 @@ data class FolderFile(
  * always present, and field order is declaration order, so identical state always
  * produces identical bytes (otherwise every sync would look like a change).
  */
-val syncJson: Json = Json {
-    encodeDefaults = true
-    prettyPrint = true
-}
+val syncJson: Json =
+    Json {
+        encodeDefaults = true
+        prettyPrint = true
+    }
 
 fun NoteFile.encode(): String = syncJson.encodeToString(this)
 
@@ -82,59 +83,73 @@ fun noteFileName(uuid: String): String = uuid + NOTE_FILE_SUFFIX
 fun folderFileName(uuid: String): String = uuid + FOLDER_FILE_SUFFIX
 
 /** Identity recovered from a remote filename, or null if it isn't one of ours. */
-data class RemoteFileRef(val uuid: String, val isFolder: Boolean)
+data class RemoteFileRef(
+    val uuid: String,
+    val isFolder: Boolean,
+)
 
-fun parseFileName(fileName: String): RemoteFileRef? = when {
-    fileName.endsWith(NOTE_FILE_SUFFIX) ->
-        RemoteFileRef(fileName.removeSuffix(NOTE_FILE_SUFFIX), isFolder = false)
+fun parseFileName(fileName: String): RemoteFileRef? =
+    when {
+        fileName.endsWith(NOTE_FILE_SUFFIX) ->
+            RemoteFileRef(fileName.removeSuffix(NOTE_FILE_SUFFIX), isFolder = false)
 
-    fileName.endsWith(FOLDER_FILE_SUFFIX) ->
-        RemoteFileRef(fileName.removeSuffix(FOLDER_FILE_SUFFIX), isFolder = true)
+        fileName.endsWith(FOLDER_FILE_SUFFIX) ->
+            RemoteFileRef(fileName.removeSuffix(FOLDER_FILE_SUFFIX), isFolder = true)
 
-    else -> null
-}
+        else -> null
+    }
 
 // ---- Entity mapping -------------------------------------------------------
 // parentUuid cannot be derived from an entity (it only knows its local folderId),
 // so the caller resolves it from the folder table before projecting.
 
-fun NoteEntity.toNoteFile(parentUuid: String): NoteFile = NoteFile(
-    uuid = uuid,
-    parentUuid = parentUuid,
-    createdAt = createdAt,
-    updatedAt = updatedAt,
-    deletedAt = deletedAt,
-    conflictOf = conflictOf,
-    content = content,
-)
+fun NoteEntity.toNoteFile(parentUuid: String): NoteFile =
+    NoteFile(
+        uuid = uuid,
+        parentUuid = parentUuid,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
+        conflictOf = conflictOf,
+        content = content,
+    )
 
-fun FolderEntity.toFolderFile(parentUuid: String?): FolderFile = FolderFile(
-    uuid = uuid,
-    parentUuid = parentUuid,
-    updatedAt = updatedAt,
-    deletedAt = deletedAt,
-    name = name,
-)
+fun FolderEntity.toFolderFile(parentUuid: String?): FolderFile =
+    FolderFile(
+        uuid = uuid,
+        parentUuid = parentUuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
+        name = name,
+    )
 
 /** Caller supplies the local row ids after resolving uuids to ids. */
-fun NoteFile.toEntity(localId: Long, localFolderId: Long): NoteEntity = NoteEntity(
-    id = localId,
-    title = content.noteTitle(),
-    content = content,
-    createdAt = createdAt,
-    folderId = localFolderId,
-    uuid = uuid,
-    updatedAt = updatedAt,
-    deletedAt = deletedAt,
-    conflictOf = conflictOf,
-)
+fun NoteFile.toEntity(
+    localId: Long,
+    localFolderId: Long,
+): NoteEntity =
+    NoteEntity(
+        id = localId,
+        title = content.noteTitle(),
+        content = content,
+        createdAt = createdAt,
+        folderId = localFolderId,
+        uuid = uuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
+        conflictOf = conflictOf,
+    )
 
-fun FolderFile.toEntity(localId: Long, localParentId: Long?): FolderEntity = FolderEntity(
-    id = localId,
-    name = name,
-    parentId = localParentId,
-    sortOrder = 0,
-    uuid = uuid,
-    updatedAt = updatedAt,
-    deletedAt = deletedAt,
-)
+fun FolderFile.toEntity(
+    localId: Long,
+    localParentId: Long?,
+): FolderEntity =
+    FolderEntity(
+        id = localId,
+        name = name,
+        parentId = localParentId,
+        sortOrder = 0,
+        uuid = uuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
+    )

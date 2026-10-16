@@ -9,28 +9,29 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SyncFilesTest {
+    private val note =
+        NoteEntity(
+            id = 7L,
+            title = "Hello",
+            content = "Hello\nworld",
+            createdAt = 1_000L,
+            folderId = 1L,
+            uuid = "6b84a396-1564-4521-a1bd-21f89159bb02",
+            updatedAt = 2_000L,
+            deletedAt = null,
+            conflictOf = null,
+        )
 
-    private val note = NoteEntity(
-        id = 7L,
-        title = "Hello",
-        content = "Hello\nworld",
-        createdAt = 1_000L,
-        folderId = 1L,
-        uuid = "6b84a396-1564-4521-a1bd-21f89159bb02",
-        updatedAt = 2_000L,
-        deletedAt = null,
-        conflictOf = null,
-    )
-
-    private val folder = FolderEntity(
-        id = 2L,
-        name = "work",
-        parentId = 1L,
-        sortOrder = 0,
-        uuid = "d650a43c-e92b-4e61-9862-eb4b87088f29",
-        updatedAt = 3_000L,
-        deletedAt = null,
-    )
+    private val folder =
+        FolderEntity(
+            id = 2L,
+            name = "work",
+            parentId = 1L,
+            sortOrder = 0,
+            uuid = "d650a43c-e92b-4e61-9862-eb4b87088f29",
+            updatedAt = 3_000L,
+            deletedAt = null,
+        )
 
     @Test
     fun noteRoundTrips() {
@@ -77,8 +78,10 @@ class SyncFilesTest {
 
     @Test
     fun mappingBackToEntityDerivesTitleAndKeepsIds() {
-        val restored = note.toNoteFile(parentUuid = "parent-uuid")
-            .toEntity(localId = 42L, localFolderId = 9L)
+        val restored =
+            note
+                .toNoteFile(parentUuid = "parent-uuid")
+                .toEntity(localId = 42L, localFolderId = 9L)
 
         assertEquals(42L, restored.id)
         assertEquals(9L, restored.folderId)

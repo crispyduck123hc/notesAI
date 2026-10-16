@@ -59,9 +59,10 @@ fun App(
     exitFlush: ExitFlush = remember { ExitFlush() },
 ) {
     val http = remember { HttpClient() }
-    val auth = remember(http, tokenStore) {
-        GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
-    }
+    val auth =
+        remember(http, tokenStore) {
+            GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
+        }
 
     var account by remember { mutableStateOf<AccountInfo?>(null) }
     var restoring by remember { mutableStateOf(true) }
@@ -76,47 +77,50 @@ fun App(
 
     NotesAiTheme {
         when {
-            restoring -> Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
+            restoring ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
 
-            account == null -> LoginScreen(
-                isSigningIn = signingIn,
-                error = error,
-                onSignIn = {
-                    signingIn = true
-                    error = null
-                    scope.launch {
-                        try {
-                            account = auth.signIn()
-                        } catch (t: Throwable) {
-                            error = t.message ?: "Sign-in failed"
-                        } finally {
-                            signingIn = false
+            account == null ->
+                LoginScreen(
+                    isSigningIn = signingIn,
+                    error = error,
+                    onSignIn = {
+                        signingIn = true
+                        error = null
+                        scope.launch {
+                            try {
+                                account = auth.signIn()
+                            } catch (t: Throwable) {
+                                error = t.message ?: "Sign-in failed"
+                            } finally {
+                                signingIn = false
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
 
-            else -> AccountNotes(
-                account = account!!,
-                driverFactory = driverFactory,
-                http = http,
-                accessToken = auth::accessToken,
-                exitFlush = exitFlush,
-                // A sign-in that looks unable to sync is mentioned up front, but the user is
-                // never signed out over it: this comparison has been wrong before, and the
-                // consequence of guessing wrong must not be losing access to your own notes.
-                // Any real failure still arrives with the same advice, from Google itself.
-                signInWarning = if (auth.needsReauthorization()) REAUTHORIZATION_MESSAGE else null,
-                onSignOut = {
-                    auth.signOut()
-                    account = null
-                },
-            )
+            else ->
+                AccountNotes(
+                    account = account!!,
+                    driverFactory = driverFactory,
+                    http = http,
+                    accessToken = auth::accessToken,
+                    exitFlush = exitFlush,
+                    // A sign-in that looks unable to sync is mentioned up front, but the user is
+                    // never signed out over it: this comparison has been wrong before, and the
+                    // consequence of guessing wrong must not be losing access to your own notes.
+                    // Any real failure still arrives with the same advice, from Google itself.
+                    signInWarning = if (auth.needsReauthorization()) REAUTHORIZATION_MESSAGE else null,
+                    onSignOut = {
+                        auth.signOut()
+                        account = null
+                    },
+                )
         }
     }
 }
@@ -137,9 +141,10 @@ private fun AccountNotes(
 ) {
     val scopeName = remember(account) { accountDatabaseName(account.email) }
 
-    val repository = remember(scopeName) {
-        NoteRepository(driverFactory, scopeName).also { it.recordAccountScope(scopeName) }
-    }
+    val repository =
+        remember(scopeName) {
+            NoteRepository(driverFactory, scopeName).also { it.recordAccountScope(scopeName) }
+        }
 
     // Tripwire: the database is named after the account, so a mismatch means something is
     // badly wrong. Refuse to sync rather than merge two accounts' notes.
@@ -230,7 +235,10 @@ private fun AccountNotes(
  * when there was one. The two are kept apart because they belong in different places — the
  * line goes in the sidebar, the detail goes in a dialog the reader can copy from.
  */
-private class SyncOutcome(val summary: String, val error: String? = null)
+private class SyncOutcome(
+    val summary: String,
+    val error: String? = null,
+)
 
 /**
  * Runs one push/pull pass and describes what happened, including anything that needs a human
@@ -242,34 +250,36 @@ private suspend fun describeSync(
     repository: NoteRepository,
     pushSettleMillis: Long,
 ): SyncOutcome {
-    val result = try {
-        engine.sync(pushSettleMillis = pushSettleMillis)
-    } catch (t: Throwable) {
-        val detail = t.message ?: t.toString()
-        // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the
-        // whole thing without clicking anything.
-        println("[notesAI] sync failed: $detail")
-        return SyncOutcome(summary = "Sync failed", error = detail)
-    }
+    val result =
+        try {
+            engine.sync(pushSettleMillis = pushSettleMillis)
+        } catch (t: Throwable) {
+            val detail = t.message ?: t.toString()
+            // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the
+            // whole thing without clicking anything.
+            println("[notesAI] sync failed: $detail")
+            return SyncOutcome(summary = "Sync failed", error = detail)
+        }
     val pending = repository.unresolvedConflicts().size
     val queued = repository.pendingOutbox().size
 
-    val summary = buildString {
-        if (!result.changed && pending == 0 && result.failed == 0 && queued == 0) {
-            append("Up to date")
-        } else {
-            append("Synced — pushed ${result.pushed}, pulled ${result.pulled}")
-            if (result.conflictsResolved > 0) {
-                append(", kept both for ${result.conflictsResolved} edit conflict(s)")
+    val summary =
+        buildString {
+            if (!result.changed && pending == 0 && result.failed == 0 && queued == 0) {
+                append("Up to date")
+            } else {
+                append("Synced — pushed ${result.pushed}, pulled ${result.pulled}")
+                if (result.conflictsResolved > 0) {
+                    append(", kept both for ${result.conflictsResolved} edit conflict(s)")
+                }
+                if (result.purged > 0) append(", purged ${result.purged} old tombstone(s)")
+                if (result.failed > 0) append(", ${result.failed} failed")
             }
-            if (result.purged > 0) append(", purged ${result.purged} old tombstone(s)")
-            if (result.failed > 0) append(", ${result.failed} failed")
+            // Say so when a change is waiting on the settle window, otherwise "pushed 0" looks
+            // like the edit was ignored.
+            if (queued > 0) append(". $queued change(s) waiting to upload")
+            if (pending > 0) append(". $pending conflict(s) need a decision")
         }
-        // Say so when a change is waiting on the settle window, otherwise "pushed 0" looks
-        // like the edit was ignored.
-        if (queued > 0) append(". $queued change(s) waiting to upload")
-        if (pending > 0) append(". $pending conflict(s) need a decision")
-    }
 
     return SyncOutcome(summary = summary)
 }

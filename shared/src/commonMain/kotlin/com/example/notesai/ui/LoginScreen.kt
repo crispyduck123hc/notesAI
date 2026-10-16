@@ -2,7 +2,6 @@ package com.example.notesai.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -27,9 +26,10 @@ fun LoginScreen(
     onSignIn: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(24.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -38,8 +38,9 @@ fun LoginScreen(
             Spacer(Modifier.height(8.dp))
 
             Text(
-                text = "Your notes live in your own Google Drive. " +
-                    "Sign in to keep them in sync across your devices.",
+                text =
+                    "Your notes live in your own Google Drive. " +
+                        "Sign in to keep them in sync across your devices.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

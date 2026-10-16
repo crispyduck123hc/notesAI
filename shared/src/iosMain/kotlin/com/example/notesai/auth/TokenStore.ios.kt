@@ -56,25 +56,25 @@ class KeychainTokenStore(
     private val service: String = "com.example.notesai.oauth",
     private val account: String = "default",
 ) : TokenStore {
-
     override fun load(): AuthTokens? {
         val query = newQuery()
         CFDictionaryAddValue(query, kSecReturnData, kCFBooleanTrue)
         CFDictionaryAddValue(query, kSecMatchLimit, kSecMatchLimitOne)
 
-        val text = memScoped {
-            val result = alloc<COpaquePointerVar>()
-            val status = SecItemCopyMatching(query, result.ptr)
-            CFRelease(query)
-            if (status != errSecSuccess) return@memScoped null
+        val text =
+            memScoped {
+                val result = alloc<COpaquePointerVar>()
+                val status = SecItemCopyMatching(query, result.ptr)
+                CFRelease(query)
+                if (status != errSecSuccess) return@memScoped null
 
-            val data: CFDataRef? = result.value?.reinterpret()
-            val length = CFDataGetLength(data).toInt()
-            val bytesPtr = CFDataGetBytePtr(data)
-            val bytes = bytesPtr?.reinterpret<ByteVar>()?.readBytes(length)
-            CFRelease(result.value)
-            bytes?.decodeToString()
-        }
+                val data: CFDataRef? = result.value?.reinterpret()
+                val length = CFDataGetLength(data).toInt()
+                val bytesPtr = CFDataGetBytePtr(data)
+                val bytes = bytesPtr?.reinterpret<ByteVar>()?.readBytes(length)
+                CFRelease(result.value)
+                bytes?.decodeToString()
+            }
 
         return text?.let { runCatching { authJson.decodeFromString<AuthTokens>(it) }.getOrNull() }
     }
@@ -85,11 +85,12 @@ class KeychainTokenStore(
         val payload = authJson.encodeToString(tokens).encodeToByteArray()
         val query = newQuery()
         payload.usePinned { pinned ->
-            val data = CFDataCreate(
-                kCFAllocatorDefault,
-                pinned.addressOf(0).reinterpret<UByteVar>(),
-                payload.size.toLong(),
-            )
+            val data =
+                CFDataCreate(
+                    kCFAllocatorDefault,
+                    pinned.addressOf(0).reinterpret<UByteVar>(),
+                    payload.size.toLong(),
+                )
             CFDictionaryAddValue(query, kSecValueData, data)
             CFDictionaryAddValue(query, kSecAttrAccessible, kSecAttrAccessibleAfterFirstUnlock)
             SecItemAdd(query, null)
@@ -105,12 +106,13 @@ class KeychainTokenStore(
     }
 
     private fun newQuery(): CFMutableDictionaryRef? {
-        val query = CFDictionaryCreateMutable(
-            kCFAllocatorDefault,
-            5,
-            kCFTypeDictionaryKeyCallBacks.ptr,
-            kCFTypeDictionaryValueCallBacks.ptr,
-        )
+        val query =
+            CFDictionaryCreateMutable(
+                kCFAllocatorDefault,
+                5,
+                kCFTypeDictionaryKeyCallBacks.ptr,
+                kCFTypeDictionaryValueCallBacks.ptr,
+            )
         CFDictionaryAddValue(query, kSecClass, kSecClassGenericPassword)
         CFDictionaryAddValue(query, kSecAttrService, cfString(service))
         CFDictionaryAddValue(query, kSecAttrAccount, cfString(account))

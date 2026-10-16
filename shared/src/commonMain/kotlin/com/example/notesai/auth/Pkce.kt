@@ -11,7 +11,10 @@ private const val VERIFIER_ALPHABET =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
 /** 43..128 chars from the unreserved set, per the RFC. */
-fun generateCodeVerifier(random: Random = Random.Default, length: Int = 64): String {
+fun generateCodeVerifier(
+    random: Random = Random.Default,
+    length: Int = 64,
+): String {
     require(length in 43..128) { "PKCE verifier must be 43..128 characters" }
     return buildString(length) {
         repeat(length) { append(VERIFIER_ALPHABET[random.nextInt(VERIFIER_ALPHABET.length)]) }

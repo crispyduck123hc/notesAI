@@ -25,6 +25,24 @@ jobs:
         with:
           args: -color
 
+  code-quality:
+    name: Lint and static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # ktlint for formatting, detekt for code smells. Both see handwritten sources only — generated
+      # code is excluded in the root build file. detekt's per-module baselines record the findings
+      # that existed when it was introduced, so this gates new code without demanding a cleanup
+      # first; the baselines are meant to shrink.
+      - name: Lint and analyse
+        run: ./gradlew ktlintCheck detekt --console=plain
+
   shared-tests:
     name: Shared tests (JVM)
     runs-on: ubuntu-latest

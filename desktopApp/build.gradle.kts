@@ -12,6 +12,11 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
 
+    // The entry point draws one small window of its own ("already running"), and `:shared` does not
+    // expose its Compose dependencies transitively.
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
+
     implementation(libs.compose.uiToolingPreview)
 }
 
@@ -50,7 +55,9 @@ compose.desktop {
                 // and an empty identity makes jpackage try to sign with "" and fail with
                 // "Could not find certificate for ''". Tolerating that here rather than asking
                 // every caller to be careful keeps an unsigned build buildable from anywhere.
-                buildEnv.environmentVariable("MACOS_SIGNING_IDENTITY").orNull
+                buildEnv
+                    .environmentVariable("MACOS_SIGNING_IDENTITY")
+                    .orNull
                     ?.takeIf { it.isNotBlank() }
                     ?.let { identityName ->
                         signing {
@@ -61,8 +68,7 @@ compose.desktop {
 
                 // Only consulted by the notarize* tasks, and blank is treated as absent for the
                 // same reason: an unconfigured credential should look unconfigured.
-                fun credential(name: String) =
-                    buildEnv.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
+                fun credential(name: String) = buildEnv.environmentVariable(name).orNull?.takeIf { it.isNotBlank() }
 
                 notarization {
                     appleID.set(credential("NOTARIZATION_APPLE_ID"))

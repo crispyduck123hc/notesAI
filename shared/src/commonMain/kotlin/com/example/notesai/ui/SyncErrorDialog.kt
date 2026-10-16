@@ -32,9 +32,10 @@ internal fun SyncErrorDialog(
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState()),
+                    modifier =
+                        Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
                 )
             }
         },

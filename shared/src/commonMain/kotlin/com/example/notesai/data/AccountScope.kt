@@ -17,7 +17,12 @@ private const val NO_ACCOUNT = "no-account"
  * email address onto disk in the clear.
  */
 fun accountDatabaseName(email: String?): String {
-    val key = email?.trim()?.lowercase().orEmpty().ifEmpty { NO_ACCOUNT }
+    val key =
+        email
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+            .ifEmpty { NO_ACCOUNT }
     val digest = sha256(key.encodeToByteArray())
 
     return buildString {

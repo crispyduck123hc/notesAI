@@ -50,10 +50,11 @@ internal fun NoteTreePane(
     onSignOut: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .width(Dimens.TreePaneWidth)
-            .fillMaxHeight()
-            .padding(Dimens.Gutter)
+        modifier =
+            Modifier
+                .width(Dimens.TreePaneWidth)
+                .fillMaxHeight()
+                .padding(Dimens.Gutter),
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Button(onClick = onCreateNote, modifier = Modifier.weight(1f)) {
@@ -71,8 +72,12 @@ internal fun NoteTreePane(
             items(tree, key = { if (it.isFolder) "f${it.id}" else "n${it.id}" }) { item ->
                 NoteTreeRow(
                     item = item,
-                    selected = if (item.isFolder) item.id == selectedFolderId
-                    else item.id == selectedNoteId,
+                    selected =
+                        if (item.isFolder) {
+                            item.id == selectedFolderId
+                        } else {
+                            item.id == selectedNoteId
+                        },
                     onToggle = { onToggle(item.id) },
                     onClick = { if (item.isFolder) onSelectFolder(item.id) else onSelectNote(item) },
                     onDelete = { if (item.isFolder) onDeleteFolder(item.id) else onDeleteNote(item.id) },
@@ -89,11 +94,12 @@ internal fun NoteTreePane(
         // Sync state. There is deliberately no sync button: the app syncs on start, when the
         // window regains focus, and on a slow tick — this is a report, not a control.
         Text(
-            text = when {
-                syncing -> "Syncing\u2026"
-                syncStatus != null -> syncStatus
-                else -> "Not synced yet"
-            },
+            text =
+                when {
+                    syncing -> "Syncing\u2026"
+                    syncStatus != null -> syncStatus
+                    else -> "Not synced yet"
+                },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 3,
@@ -119,7 +125,14 @@ internal fun NoteTreePane(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = if (conflictCount == 1) "1 conflict needs a decision" else "$conflictCount conflicts need a decision",
+                    text =
+                        if (conflictCount ==
+                            1
+                        ) {
+                            "1 conflict needs a decision"
+                        } else {
+                            "$conflictCount conflicts need a decision"
+                        },
                     color = MaterialTheme.colorScheme.error,
                 )
             }

@@ -1,0 +1,26 @@
+# Read by ktlint (and by editors). Rules that are not mentioned keep their defaults.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{kt,kts}]
+# `@Composable` functions are conventionally capitalised in Compose (NoteTreePane, ConflictDialog),
+# which ktlint's naming rule cannot know on its own.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# One public class per file is not how this codebase works: the platform `actual` implementations
+# share a file with the `expect` declaration they implement, so TokenStore.ios.kt holds
+# KeychainTokenStore. Renaming those would break the convention that pairs them.
+ktlint_standard_filename = disabled
+
+[shared/src/iosMain/**/*.kt]
+# `MainViewController` is the Compose-for-iOS entry point, called from Swift as
+# `MainViewControllerKt.MainViewController()`. It is capitalised by convention, and renaming it would
+# mean changing the Swift call site to match a lint rule.
+ktlint_standard_function-naming = disabled

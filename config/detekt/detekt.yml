@@ -1,0 +1,38 @@
+# Overrides on top of detekt's defaults (the build sets `buildUponDefaultConfig = true`), so only
+# departures from the default ruleset appear here.
+
+complexity:
+  # A Compose function takes its state and its callbacks as parameters. NoteTreePane has twenty of
+  # them and is entirely idiomatic; the default limit of six measures the wrong thing.
+  LongParameterList:
+    ignoreAnnotated: ['Composable']
+
+  # Composables are also long by nature: they are a UI tree written as one expression, and splitting
+  # them for a line count makes them harder to read, not easier.
+  LongMethod:
+    ignoreAnnotated: ['Composable']
+
+  CyclomaticComplexMethod:
+    ignoreAnnotated: ['Composable']
+
+style:
+  # MagicNumber is off. It fired on `listOf(3, 4)` in a throwaway file, and this codebase is full of
+  # legitimate literals — byte masks, SHA-256 round constants, timeout durations, port numbers. The
+  # rule's value is catching an unexplained number in business logic; the cost here was a rule that
+  # fires on ordinary code, and a check people learn to work around is worse than one they trust.
+  # Turn it back on here if the noise ever seems worth it; the baselines have been regenerated
+  # without its entries, so nothing else needs changing.
+  MagicNumber:
+    active: false
+
+naming:
+  # Same reasoning as ktlint's naming rule: `@Composable` functions are capitalised by convention
+  # (NoteTreePane, ConflictDialog).
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+
+  # One declaration per file is not how this codebase works: the platform `actual` implementations
+  # share a file with the `expect` declaration they implement, so TokenStore.ios.kt holds
+  # KeychainTokenStore. Renaming would break the convention that pairs them.
+  MatchingDeclarationName:
+    active: false

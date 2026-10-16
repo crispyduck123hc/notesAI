@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-
 import com.example.notesai.ui.theme.Dimens
 
 /** One parked conflict, already resolved to something displayable. */
@@ -74,25 +73,29 @@ fun ConflictDialog(
     )
 }
 
-private fun describe(item: ConflictUiItem): String = when (item.kind) {
-    "delete-vs-edit" -> if (item.localIsDeletion) {
-        "Deleted on this device, edited on another."
-    } else {
-        "Edited here, deleted on another device."
+private fun describe(item: ConflictUiItem): String =
+    when (item.kind) {
+        "delete-vs-edit" ->
+            if (item.localIsDeletion) {
+                "Deleted on this device, edited on another."
+            } else {
+                "Edited here, deleted on another device."
+            }
+
+        "remote-missing" -> "Exists on this device but no longer on the server."
+        else -> "Changed here and on another device."
     }
 
-    "remote-missing" -> "Exists on this device but no longer on the server."
-    else -> "Changed here and on another device."
-}
+private fun localLabel(item: ConflictUiItem): String =
+    when {
+        item.kind == "remote-missing" -> "Upload it"
+        item.kind == "delete-vs-edit" && item.localIsDeletion -> "Keep deletion"
+        else -> "Keep mine"
+    }
 
-private fun localLabel(item: ConflictUiItem): String = when {
-    item.kind == "remote-missing" -> "Upload it"
-    item.kind == "delete-vs-edit" && item.localIsDeletion -> "Keep deletion"
-    else -> "Keep mine"
-}
-
-private fun remoteLabel(item: ConflictUiItem): String = when {
-    item.kind == "remote-missing" -> "Delete it here"
-    item.kind == "delete-vs-edit" && !item.localIsDeletion -> "Keep deletion"
-    else -> "Keep theirs"
-}
+private fun remoteLabel(item: ConflictUiItem): String =
+    when {
+        item.kind == "remote-missing" -> "Delete it here"
+        item.kind == "delete-vs-edit" && !item.localIsDeletion -> "Keep deletion"
+        else -> "Keep theirs"
+    }

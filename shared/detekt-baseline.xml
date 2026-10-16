@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:App.kt$!result.changed &amp;&amp; pending == 0 &amp;&amp; result.failed == 0 &amp;&amp; queued == 0</ID>
+    <ID>ComplexCondition:Ids.kt$index == 4 || index == 6 || index == 8 || index == 10</ID>
+    <ID>CyclomaticComplexMethod:DriveClient.kt$internal fun describeDriveFailure( statusCode: Int, body: String, ): String</ID>
+    <ID>CyclomaticComplexMethod:FakeDriveServer.kt$FakeDriveServer$private fun handle(exchange: HttpExchange)</ID>
+    <ID>CyclomaticComplexMethod:NoteSyncEngine.kt$NoteSyncEngine$private fun decide( uuid: String, isDirty: Boolean, isPushable: Boolean, remoteEntry: RemoteEntry?, ): Decision?</ID>
+    <ID>CyclomaticComplexMethod:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun pullFolders(decisions: List&lt;Decision&gt;): Int</ID>
+    <ID>CyclomaticComplexMethod:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun syncPass( pushSettleMillis: Long, nowMillis: Long, ): SyncResult</ID>
+    <ID>FunctionNaming:MainViewController.kt$fun MainViewController()</ID>
+    <ID>LongMethod:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun resolveNoteConflict(decision: Decision): Resolution</ID>
+    <ID>LongMethod:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun syncPass( pushSettleMillis: Long, nowMillis: Long, ): SyncResult</ID>
+    <ID>LongMethod:Sha256.kt$fun sha256(message: ByteArray): ByteArray</ID>
+    <ID>LongParameterList:NoteRepository.kt$NoteRepository$( entityType: String, entityUuid: String, kind: String, localRevision: String?, remoteRevision: String?, resolution: String? = null, conflictCopyUuid: String? = null, )</ID>
+    <ID>LongParameterList:NoteRepository.kt$NoteRepository$( uuid: String, title: String, content: String, createdAt: Long, folderId: Long, updatedAt: Long, deletedAt: Long?, conflictOf: String?, )</ID>
+    <ID>LoopWithTooManyJumpStatements:NoteSyncEngine.kt$NoteSyncEngine$for</ID>
+    <ID>MaxLineLength:FakeDriveServer.kt$FakeDriveServer$"""{"id":"$id","name":"${file.name}","version":${file.version},"headRevisionId":"rev-${file.version}","md5Checksum":"md5-${file.version}"}"""</ID>
+    <ID>NestedBlockDepth:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun syncPass( pushSettleMillis: Long, nowMillis: Long, ): SyncResult</ID>
+    <ID>ReturnCount:GoogleAuthManager.kt$GoogleAuthManager$suspend fun accessToken(): String?</ID>
+    <ID>ReturnCount:NoteSyncEngine.kt$NoteSyncEngine$private suspend fun resolveNoteConflict(decision: Decision): Resolution</ID>
+    <ID>ReturnCount:NoteSyncEngine.kt$NoteSyncEngine$suspend fun resolveConflict( conflictId: Long, keepLocal: Boolean, ): Boolean</ID>
+    <ID>ReturnCount:SingleInstanceLock.kt$SingleInstanceLock.Companion$fun acquire(lockFile: File = File(appDataDirectory(), LOCK_FILE_NAME)): LockAcquisition</ID>
+    <ID>SpreadOperator:GoogleAuthManager.kt$GoogleAuthManager$( "client_id" to config.clientId, "refresh_token" to refreshToken, "grant_type" to "refresh_token", *clientSecretParam(), )</ID>
+    <ID>SpreadOperator:GoogleAuthManager.kt$GoogleAuthManager$( "code" to code, "client_id" to config.clientId, "redirect_uri" to config.redirectUri, "grant_type" to "authorization_code", "code_verifier" to verifier, *clientSecretParam(), )</ID>
+    <ID>SpreadOperator:GoogleOAuth.jvm.kt$(*command)</ID>
+    <ID>SwallowedException:SingleInstanceLock.kt$SingleInstanceLock.Companion$alreadyHeldInThisJvm: OverlappingFileLockException</ID>
+    <ID>SwallowedException:SingleInstanceLock.kt$SingleInstanceLock.Companion$cannotLock: Throwable</ID>
+    <ID>TooGenericExceptionCaught:App.kt$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:GoogleAuthManager.kt$GoogleAuthManager$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:NoteSyncEngine.kt$NoteSyncEngine$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:SingleInstanceLock.kt$SingleInstanceLock.Companion$cannotLock: Throwable</ID>
+    <ID>TooManyFunctions:NoteRepository.kt$NoteRepository</ID>
+    <ID>TooManyFunctions:NoteSyncEngine.kt$NoteSyncEngine</ID>
+    <ID>TooManyFunctions:SyncFiles.kt$com.example.notesai.sync.SyncFiles.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

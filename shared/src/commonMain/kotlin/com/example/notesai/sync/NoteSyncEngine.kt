@@ -40,7 +40,10 @@ private enum class ConflictOutcome { KEEP_BOTH, DEFERRED, NONE }
  * publishes only the copy, while keeping the local text publishes the note and the copy, so the
  * caller's `pushed` count can stay honest either way.
  */
-private class Resolution(val outcome: ConflictOutcome, val published: Int = 0)
+private class Resolution(
+    val outcome: ConflictOutcome,
+    val published: Int = 0,
+)
 
 private data class Decision(
     val uuid: String,
@@ -49,7 +52,10 @@ private data class Decision(
     val remote: RemoteEntry?,
 )
 
-private data class PendingFolder(val decision: Decision, val file: FolderFile)
+private data class PendingFolder(
+    val decision: Decision,
+    val file: FolderFile,
+)
 
 /**
  * Optimistic-concurrency sync with keep-both conflict resolution.
@@ -73,7 +79,6 @@ class NoteSyncEngine(
     private val repository: NoteRepository,
     private val remote: SyncRemote,
 ) {
-
     private val syncMutex = Mutex()
 
     /**
@@ -90,14 +95,20 @@ class NoteSyncEngine(
         nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
     ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis) }
 
-    private suspend fun syncPass(pushSettleMillis: Long, nowMillis: Long): SyncResult {
-        val entriesByUuid = remote.list()
-            .mapNotNull { entry -> parseFileName(entry.name)?.let { it.uuid to entry } }
-            .toMap()
+    private suspend fun syncPass(
+        pushSettleMillis: Long,
+        nowMillis: Long,
+    ): SyncResult {
+        val entriesByUuid =
+            remote
+                .list()
+                .mapNotNull { entry -> parseFileName(entry.name)?.let { it.uuid to entry } }
+                .toMap()
 
         // Defensive: an outbox row whose entity no longer exists locally would otherwise
         // keep the database permanently "dirty".
-        repository.pendingOutbox()
+        repository
+            .pendingOutbox()
             .filter { repository.folderByUuid(it.entityUuid) == null && repository.noteByUuid(it.entityUuid) == null }
             .forEach { repository.clearOutbox(it.entityType, it.entityUuid) }
 
@@ -110,20 +121,21 @@ class NoteSyncEngine(
         // Records whose last local change is still fresh stay queued. Rows that predate the
         // outbox have no `enqueuedAt` to wait on, so they go out immediately.
         val settledBefore = nowMillis - pushSettleMillis
-        val pushable = buildSet {
-            addAll(unpublishedNew)
-            queued.filter { it.enqueuedAt <= settledBefore }.forEach { add(it.entityUuid) }
-        }
-
-        val decisions = LinkedHashSet<String>()
-            .apply {
-                addAll(dirty)
-                addAll(entriesByUuid.keys)
-                // A record whose remote file has vanished is discoverable *only* through its
-                // baseline: it is neither dirty nor present in the listing.
-                addAll(baselines.map { it.entityUuid })
+        val pushable =
+            buildSet {
+                addAll(unpublishedNew)
+                queued.filter { it.enqueuedAt <= settledBefore }.forEach { add(it.entityUuid) }
             }
-            .mapNotNull { uuid -> decide(uuid, uuid in dirty, uuid in pushable, entriesByUuid[uuid]) }
+
+        val decisions =
+            LinkedHashSet<String>()
+                .apply {
+                    addAll(dirty)
+                    addAll(entriesByUuid.keys)
+                    // A record whose remote file has vanished is discoverable *only* through its
+                    // baseline: it is neither dirty nor present in the listing.
+                    addAll(baselines.map { it.entityUuid })
+                }.mapNotNull { uuid -> decide(uuid, uuid in dirty, uuid in pushable, entriesByUuid[uuid]) }
 
         val folders = decisions.filter { it.entityType == EntityType.FOLDER }
         val notes = decisions.filter { it.entityType != EntityType.FOLDER }
@@ -142,14 +154,15 @@ class NoteSyncEngine(
                 when (decision.action) {
                     Action.PUSH -> if (push(decision)) pushed++
                     Action.PULL -> Unit
-                    Action.CONFLICT, Action.RECONCILE -> if (
-                        deferConflict(
-                            decision,
-                            if (decision.remote == null) "remote-missing" else "folder-conflict",
-                        )
-                    ) {
-                        pending++
-                    }
+                    Action.CONFLICT, Action.RECONCILE ->
+                        if (
+                            deferConflict(
+                                decision,
+                                if (decision.remote == null) "remote-missing" else "folder-conflict",
+                            )
+                        ) {
+                            pending++
+                        }
                 }
             } catch (t: Throwable) {
                 repository.recordOutboxAttempt(decision.entityType, decision.uuid, t.message)
@@ -212,21 +225,27 @@ class NoteSyncEngine(
      * tombstone, which is how a delete-vs-edit is settled in favour of the deletion);
      * `false` adopts the remote version, resurrecting the note if the remote still has it.
      */
-    suspend fun resolveConflict(conflictId: Long, keepLocal: Boolean): Boolean {
+    suspend fun resolveConflict(
+        conflictId: Long,
+        keepLocal: Boolean,
+    ): Boolean {
         val conflict = repository.conflictById(conflictId) ?: return false
         val type = conflict.entityType
         val uuid = conflict.entityUuid
-        val entry = remote.list()
-            .mapNotNull { candidate -> parseFileName(candidate.name)?.let { it.uuid to candidate } }
-            .toMap()[uuid]
+        val entry =
+            remote
+                .list()
+                .mapNotNull { candidate -> parseFileName(candidate.name)?.let { it.uuid to candidate } }
+                .toMap()[uuid]
 
         if (keepLocal) {
             val content = contentFor(type, uuid) ?: return false
-            val updated = if (entry == null) {
-                remote.create(fileNameFor(type, uuid), content)
-            } else {
-                remote.update(entry.fileId, content)
-            }
+            val updated =
+                if (entry == null) {
+                    remote.create(fileNameFor(type, uuid), content)
+                } else {
+                    remote.update(entry.fileId, content)
+                }
             repository.setBaseline(type, uuid, updated.fileId, updated.version)
             repository.clearOutbox(type, uuid)
         } else if (entry == null) {
@@ -297,17 +316,19 @@ class NoteSyncEngine(
 
         // A uuid we have never seen locally is only knowable from the remote filename —
         // that is the "created on another device" case, which still has to be pulled.
-        val entityType = when {
-            folder != null -> EntityType.FOLDER
-            note != null -> EntityType.NOTE
-            remoteEntry != null -> if (parseFileName(remoteEntry.name)?.isFolder == true) {
-                EntityType.FOLDER
-            } else {
-                EntityType.NOTE
-            }
+        val entityType =
+            when {
+                folder != null -> EntityType.FOLDER
+                note != null -> EntityType.NOTE
+                remoteEntry != null ->
+                    if (parseFileName(remoteEntry.name)?.isFolder == true) {
+                        EntityType.FOLDER
+                    } else {
+                        EntityType.NOTE
+                    }
 
-            else -> return null
-        }
+                else -> return null
+            }
 
         val baseline = repository.baseline(entityType, uuid)
         val remoteChanged = remoteEntry != null && remoteEntry.version != baseline?.remoteRevisionId
@@ -338,25 +359,32 @@ class NoteSyncEngine(
 
     private suspend fun push(decision: Decision): Boolean {
         val content = contentFor(decision.entityType, decision.uuid) ?: return false
-        val entry = if (decision.remote == null) {
-            remote.create(fileNameFor(decision.entityType, decision.uuid), content)
-        } else {
-            remote.update(decision.remote.fileId, content)
-        }
+        val entry =
+            if (decision.remote == null) {
+                remote.create(fileNameFor(decision.entityType, decision.uuid), content)
+            } else {
+                remote.update(decision.remote.fileId, content)
+            }
         repository.setBaseline(decision.entityType, decision.uuid, entry.fileId, entry.version)
         repository.clearOutbox(decision.entityType, decision.uuid)
         return true
     }
 
-    private fun contentFor(entityType: String, uuid: String): String? = when (entityType) {
-        EntityType.FOLDER -> repository.folderByUuid(uuid)?.let { folder ->
-            folder.toFolderFile(parentUuid = folder.parentId?.let { repository.folderUuidById(it) }).encode()
-        }
+    private fun contentFor(
+        entityType: String,
+        uuid: String,
+    ): String? =
+        when (entityType) {
+            EntityType.FOLDER ->
+                repository.folderByUuid(uuid)?.let { folder ->
+                    folder.toFolderFile(parentUuid = folder.parentId?.let { repository.folderUuidById(it) }).encode()
+                }
 
-        else -> repository.noteByUuid(uuid)?.let { note ->
-            note.toNoteFile(parentUuid = parentUuidFor(note.folderId)).encode()
+            else ->
+                repository.noteByUuid(uuid)?.let { note ->
+                    note.toNoteFile(parentUuid = parentUuidFor(note.folderId)).encode()
+                }
         }
-    }
 
     // ---- Pull --------------------------------------------------------------
 
@@ -377,12 +405,13 @@ class NoteSyncEngine(
             while (iterator.hasNext()) {
                 val item = iterator.next()
                 val parentUuid = item.file.parentUuid
-                val parentId = when {
-                    parentUuid == null || parentUuid == NoteRepository.ROOT_FOLDER_UUID ->
-                        NoteRepository.ROOT_FOLDER_ID
-                    // Parent not applied yet: wait for the next pass.
-                    else -> repository.folderIdByUuid(parentUuid) ?: continue
-                }
+                val parentId =
+                    when {
+                        parentUuid == null || parentUuid == NoteRepository.ROOT_FOLDER_UUID ->
+                            NoteRepository.ROOT_FOLDER_ID
+                        // Parent not applied yet: wait for the next pass.
+                        else -> repository.folderIdByUuid(parentUuid) ?: continue
+                    }
                 applyFolder(item.file, item.decision.remote, parentId)
                 iterator.remove()
                 applied++
@@ -399,7 +428,11 @@ class NoteSyncEngine(
         return applied
     }
 
-    private fun applyFolder(file: FolderFile, entry: RemoteEntry?, parentId: Long) {
+    private fun applyFolder(
+        file: FolderFile,
+        entry: RemoteEntry?,
+        parentId: Long,
+    ) {
         repository.upsertRemoteFolder(
             uuid = file.uuid,
             name = file.name,
@@ -424,7 +457,10 @@ class NoteSyncEngine(
         return applied
     }
 
-    private fun applyNote(file: NoteFile, entry: RemoteEntry) {
+    private fun applyNote(
+        file: NoteFile,
+        entry: RemoteEntry,
+    ) {
         repository.upsertRemoteNote(
             uuid = file.uuid,
             title = file.content.noteTitle(),
@@ -441,7 +477,10 @@ class NoteSyncEngine(
     // ---- Conflicts ---------------------------------------------------------
 
     /** Park a structural conflict for the user and keep the local change queued. */
-    private fun deferConflict(decision: Decision, kind: String): Boolean {
+    private fun deferConflict(
+        decision: Decision,
+        kind: String,
+    ): Boolean {
         if (repository.hasUnresolvedConflict(decision.entityType, decision.uuid)) return true
         repository.recordConflict(
             entityType = decision.entityType,
@@ -455,10 +494,11 @@ class NoteSyncEngine(
 
     private suspend fun resolveNoteConflict(decision: Decision): Resolution {
         val local = repository.noteByUuid(decision.uuid) ?: return Resolution(ConflictOutcome.NONE)
-        val entry = decision.remote ?: run {
-            deferConflict(decision, "remote-missing")
-            return Resolution(ConflictOutcome.DEFERRED)
-        }
+        val entry =
+            decision.remote ?: run {
+                deferConflict(decision, "remote-missing")
+                return Resolution(ConflictOutcome.DEFERRED)
+            }
         val remoteFile = runCatching { decodeNoteFile(remote.download(entry.fileId)) }.getOrNull()
 
         // Nothing on the remote to merge with: the file was deleted elsewhere and GC removed
@@ -490,16 +530,18 @@ class NoteSyncEngine(
         //
         // Later edit wins, and the uuid breaks a tie, so two devices reach the same answer even
         // when the timestamps match.
-        val remoteWins = remoteFile.updatedAt > local.updatedAt ||
-            (remoteFile.updatedAt == local.updatedAt && remoteFile.uuid > local.uuid)
+        val remoteWins =
+            remoteFile.updatedAt > local.updatedAt ||
+                (remoteFile.updatedAt == local.updatedAt && remoteFile.uuid > local.uuid)
 
         // Whichever text does *not* become the note is preserved as a conflicted copy, so both
         // devices end up holding the same pair rather than mirrored halves.
-        val copyRowId = repository.addNote(
-            text = if (remoteWins) local.content else remoteFile.content,
-            folderId = local.folderId,
-            conflictOf = decision.uuid,
-        )
+        val copyRowId =
+            repository.addNote(
+                text = if (remoteWins) local.content else remoteFile.content,
+                folderId = local.folderId,
+                conflictOf = decision.uuid,
+            )
         val copy = repository.noteById(copyRowId)
 
         var published = 0
@@ -515,10 +557,11 @@ class NoteSyncEngine(
         }
 
         if (copy != null) {
-            val copyEntry = remote.create(
-                noteFileName(copy.uuid),
-                copy.toNoteFile(parentUuid = parentUuidFor(copy.folderId)).encode(),
-            )
+            val copyEntry =
+                remote.create(
+                    noteFileName(copy.uuid),
+                    copy.toNoteFile(parentUuid = parentUuidFor(copy.folderId)).encode(),
+                )
             repository.setBaseline(EntityType.NOTE, copy.uuid, copyEntry.fileId, copyEntry.version)
             repository.clearOutbox(EntityType.NOTE, copy.uuid)
             published++
@@ -541,11 +584,14 @@ class NoteSyncEngine(
     private fun parentUuidFor(folderId: Long): String =
         repository.folderUuidById(folderId) ?: NoteRepository.ROOT_FOLDER_UUID
 
-    private fun localRevisionOf(decision: Decision): String? = when (decision.entityType) {
-        EntityType.FOLDER -> repository.folderByUuid(decision.uuid)?.updatedAt?.toString()
-        else -> repository.noteByUuid(decision.uuid)?.updatedAt?.toString()
-    }
+    private fun localRevisionOf(decision: Decision): String? =
+        when (decision.entityType) {
+            EntityType.FOLDER -> repository.folderByUuid(decision.uuid)?.updatedAt?.toString()
+            else -> repository.noteByUuid(decision.uuid)?.updatedAt?.toString()
+        }
 }
 
-private fun fileNameFor(entityType: String, uuid: String): String =
-    if (entityType == EntityType.FOLDER) folderFileName(uuid) else noteFileName(uuid)
+private fun fileNameFor(
+    entityType: String,
+    uuid: String,
+): String = if (entityType == EntityType.FOLDER) folderFileName(uuid) else noteFileName(uuid)
