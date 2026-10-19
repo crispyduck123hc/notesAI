@@ -17,7 +17,10 @@ class ExitFlush {
     private var flush: suspend () -> Unit = {}
 
     /** Called by the signed-in screen to offer itself as the thing to drain. */
-    fun register(pendingCount: () -> Int, flush: suspend () -> Unit) {
+    fun register(
+        pendingCount: () -> Int,
+        flush: suspend () -> Unit,
+    ) {
         this.pendingCount = pendingCount
         this.flush = flush
     }

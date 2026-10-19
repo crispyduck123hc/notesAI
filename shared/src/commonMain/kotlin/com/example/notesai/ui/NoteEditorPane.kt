@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.notesai.db.NoteEntity
 import com.example.notesai.ui.theme.Dimens
@@ -42,13 +41,13 @@ private const val WRITE_DEBOUNCE_MS = 300L
 @Composable
 internal fun NoteEditorPane(
     note: NoteEntity?,
-    onChange: (String) -> Unit
+    onChange: (String) -> Unit,
 ) {
     if (note == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = "Select or create a note",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         return
@@ -80,26 +79,29 @@ internal fun NoteEditorPane(
         visualTransformation = TitleHeaderTransformation,
         textStyle = MaterialTheme.typography.bodyLarge,
         placeholder = { Text("First line becomes the title\u2026") },
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(Dimens.EditorPadding)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(Dimens.EditorPadding),
     )
 }
 
 // Styles the first line of the field as a title header without changing any
 // characters, so OffsetMapping.Identity stays valid.
-private val TitleHeaderTransformation = VisualTransformation { text ->
-    val newlineIndex = text.text.indexOf('\n')
-    val firstLineEnd = if (newlineIndex == -1) text.text.length else newlineIndex
+private val TitleHeaderTransformation =
+    VisualTransformation { text ->
+        val newlineIndex = text.text.indexOf('\n')
+        val firstLineEnd = if (newlineIndex == -1) text.text.length else newlineIndex
 
-    val styled = buildAnnotatedString {
-        append(text.text)
-        addStyle(
-            SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold),
-            start = 0,
-            end = firstLineEnd
-        )
+        val styled =
+            buildAnnotatedString {
+                append(text.text)
+                addStyle(
+                    SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold),
+                    start = 0,
+                    end = firstLineEnd,
+                )
+            }
+
+        TransformedText(styled, OffsetMapping.Identity)
     }
-
-    TransformedText(styled, OffsetMapping.Identity)
-}

@@ -6,7 +6,6 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class AccountScopeTest {
-
     @Test
     fun differentAccountsGetDifferentDatabases() {
         assertNotEquals(

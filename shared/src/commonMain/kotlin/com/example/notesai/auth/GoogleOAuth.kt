@@ -6,21 +6,22 @@ const val GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 const val GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
 /**
- * `drive.appdata` scopes the app to its own hidden app-data folder, so the user's
- * other Drive files are not visible to us at all. `openid`/`email` are only used to
- * show which account is connected on the login screen.
- */
-/**
  * The one scope sync cannot work without. Named so the sign-in check can require it without
  * also demanding the cosmetic ones — see `requiredScopes` in `GoogleAuthManager`.
  */
 const val DRIVE_APP_DATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
-val DEFAULT_SCOPES = listOf(
-    DRIVE_APP_DATA_SCOPE,
-    "openid",
-    "email",
-)
+/**
+ * `drive.appdata` scopes the app to its own hidden app-data folder, so the user's
+ * other Drive files are not visible to us at all. `openid`/`email` are only used to
+ * show which account is connected on the login screen.
+ */
+val DEFAULT_SCOPES =
+    listOf(
+        DRIVE_APP_DATA_SCOPE,
+        "openid",
+        "email",
+    )
 
 /**
  * OAuth client configuration. Client ids are not secrets for installed apps, but each
@@ -34,25 +35,33 @@ data class GoogleOAuthConfig(
     val scopes: List<String> = DEFAULT_SCOPES,
 )
 
-fun GoogleOAuthConfig.authorizationUrl(state: String, codeChallenge: String): String {
-    val params = listOf(
-        "client_id" to clientId,
-        "redirect_uri" to redirectUri,
-        "response_type" to "code",
-        "scope" to scopes.joinToString(" "),
-        "code_challenge" to codeChallenge,
-        "code_challenge_method" to "S256",
-        "state" to state,
-        // offline + consent so Google actually returns a refresh token.
-        "access_type" to "offline",
-        "prompt" to "consent",
-    )
-    return GOOGLE_AUTH_ENDPOINT + "?" + params.joinToString("&") { (key, value) ->
-        "$key=${value.encodeURLParameter()}"
-    }
+fun GoogleOAuthConfig.authorizationUrl(
+    state: String,
+    codeChallenge: String,
+): String {
+    val params =
+        listOf(
+            "client_id" to clientId,
+            "redirect_uri" to redirectUri,
+            "response_type" to "code",
+            "scope" to scopes.joinToString(" "),
+            "code_challenge" to codeChallenge,
+            "code_challenge_method" to "S256",
+            "state" to state,
+            // offline + consent so Google actually returns a refresh token.
+            "access_type" to "offline",
+            "prompt" to "consent",
+        )
+    return GOOGLE_AUTH_ENDPOINT + "?" +
+        params.joinToString("&") { (key, value) ->
+            "$key=${value.encodeURLParameter()}"
+        }
 }
 
-class AuthException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class AuthException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /**
  * Runs the platform's interactive authorization step and returns the `code` query

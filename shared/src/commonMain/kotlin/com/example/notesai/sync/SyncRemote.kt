@@ -20,10 +20,16 @@ interface SyncRemote {
     suspend fun download(fileId: String): String
 
     /** Creates a new file and returns its identity. */
-    suspend fun create(name: String, content: String): RemoteEntry
+    suspend fun create(
+        name: String,
+        content: String,
+    ): RemoteEntry
 
     /** Replaces the contents of an existing file and returns its new identity. */
-    suspend fun update(fileId: String, content: String): RemoteEntry
+    suspend fun update(
+        fileId: String,
+        content: String,
+    ): RemoteEntry
 
     /** Removes a file outright. Only tombstone GC should call this. */
     suspend fun delete(fileId: String)

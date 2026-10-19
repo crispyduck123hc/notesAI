@@ -6,10 +6,11 @@ import kotlinx.serialization.json.Json
 import kotlin.io.encoding.Base64
 
 /** Compact JSON for stored/parsed auth payloads (not the sync projection format). */
-internal val authJson = Json {
-    ignoreUnknownKeys = true
-    encodeDefaults = true
-}
+internal val authJson =
+    Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
 /** Raw response from Google's token endpoint. */
 @Serializable

@@ -4,8 +4,9 @@ import com.example.notesai.drive.DriveClient
 import com.example.notesai.drive.DriveFile
 
 /** [SyncRemote] backed by Google Drive's hidden app data folder. */
-class DriveRemote(private val drive: DriveClient) : SyncRemote {
-
+class DriveRemote(
+    private val drive: DriveClient,
+) : SyncRemote {
     override suspend fun list(): List<RemoteEntry> =
         drive.listAppDataFiles().mapNotNull { file ->
             file.name?.let { RemoteEntry(fileId = file.id, name = it, version = file.versionToken()) }
@@ -13,11 +14,15 @@ class DriveRemote(private val drive: DriveClient) : SyncRemote {
 
     override suspend fun download(fileId: String): String = drive.downloadText(fileId)
 
-    override suspend fun create(name: String, content: String): RemoteEntry =
-        drive.uploadText(fileName = name, content = content).toEntry()
+    override suspend fun create(
+        name: String,
+        content: String,
+    ): RemoteEntry = drive.uploadText(fileName = name, content = content).toEntry()
 
-    override suspend fun update(fileId: String, content: String): RemoteEntry =
-        drive.uploadText(fileName = "", content = content, existingFileId = fileId).toEntry()
+    override suspend fun update(
+        fileId: String,
+        content: String,
+    ): RemoteEntry = drive.uploadText(fileName = "", content = content, existingFileId = fileId).toEntry()
 
     override suspend fun delete(fileId: String) = drive.deleteFile(fileId)
 }

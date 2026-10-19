@@ -5,8 +5,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** Stand-in for the platform store; only the scope field matters here. */
-private class StubTokenStore(private var tokens: AuthTokens? = null) : TokenStore {
+private class StubTokenStore(
+    private var tokens: AuthTokens? = null,
+) : TokenStore {
     override fun load(): AuthTokens? = tokens
+
     override fun save(tokens: AuthTokens) {
         this.tokens = tokens
     }
@@ -16,13 +19,14 @@ private class StubTokenStore(private var tokens: AuthTokens? = null) : TokenStor
     }
 }
 
-private fun storedToken(scope: String?) = AuthTokens(
-    accessToken = "an-access-token",
-    refreshToken = "a-refresh-token",
-    expiresAtMillis = 0L,
-    email = "someone@example.com",
-    scope = scope,
-)
+private fun storedToken(scope: String?) =
+    AuthTokens(
+        accessToken = "an-access-token",
+        refreshToken = "a-refresh-token",
+        expiresAtMillis = 0L,
+        email = "someone@example.com",
+        scope = scope,
+    )
 
 /**
  * A refresh token can never gain scopes — Google returns exactly the grant that was consented
@@ -31,14 +35,15 @@ private fun storedToken(scope: String?) = AuthTokens(
  * sign-in on every launch and no amount of signing in could satisfy it.
  */
 class ScopeCheckTest {
-
-    private fun manager(store: TokenStore) = GoogleAuthManager(
-        config = GoogleOAuthConfig(
-            clientId = "a-client-id",
-            redirectUri = "http://127.0.0.1:8080/oauth2redirect",
-        ),
-        store = store,
-    )
+    private fun manager(store: TokenStore) =
+        GoogleAuthManager(
+            config =
+                GoogleOAuthConfig(
+                    clientId = "a-client-id",
+                    redirectUri = "http://127.0.0.1:8080/oauth2redirect",
+                ),
+            store = store,
+        )
 
     @Test
     fun aGrantWithoutDriveAccessMustSignInAgain() {
@@ -79,9 +84,10 @@ class ScopeCheckTest {
 
     @Test
     fun extraScopesBeyondOursAreFine() {
-        val store = StubTokenStore(
-            storedToken("https://www.googleapis.com/auth/drive.readonly $DRIVE_APP_DATA_SCOPE"),
-        )
+        val store =
+            StubTokenStore(
+                storedToken("https://www.googleapis.com/auth/drive.readonly $DRIVE_APP_DATA_SCOPE"),
+            )
 
         assertFalse(manager(store).needsReauthorization())
     }

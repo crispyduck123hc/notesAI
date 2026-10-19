@@ -15,9 +15,10 @@ actual suspend fun authorizeInteractively(
             "Register an Android OAuth client and handle the callback for redirect '$redirectUri'.",
     )
 
-actual fun defaultOAuthConfig(): GoogleOAuthConfig = GoogleOAuthConfig(
-    // Populate google.android.clientId in the git-ignored local.properties. The client
-    // must be registered with this package name and the signing certificate SHA-1.
-    clientId = LocalSecrets.ANDROID_CLIENT_ID,
-    redirectUri = "com.example.notesai:/oauth2redirect",
-)
+actual fun defaultOAuthConfig(): GoogleOAuthConfig =
+    GoogleOAuthConfig(
+        // Populate google.android.clientId in the git-ignored local.properties. The client
+        // must be registered with this package name and the signing certificate SHA-1.
+        clientId = LocalSecrets.ANDROID_CLIENT_ID,
+        redirectUri = "com.example.notesai:/oauth2redirect",
+    )

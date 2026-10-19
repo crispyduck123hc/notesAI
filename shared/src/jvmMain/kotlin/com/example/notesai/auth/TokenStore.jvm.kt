@@ -1,10 +1,10 @@
 package com.example.notesai.auth
 
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 
 /**
  * Desktop token storage.
@@ -14,17 +14,19 @@ import kotlinx.serialization.encodeToString
  * 0600 file under the user's home directory — better than plaintext SQLite, but not a
  * real credential store, so this should be replaced with DPAPI/libsecret later.
  */
-fun desktopTokenStore(): TokenStore =
-    if (isMacOs()) MacKeychainTokenStore() else FileTokenStore(defaultTokenFile())
+fun desktopTokenStore(): TokenStore = if (isMacOs()) MacKeychainTokenStore() else FileTokenStore(defaultTokenFile())
 
 private fun isMacOs(): Boolean =
-    System.getProperty("os.name").orEmpty().lowercase().contains("mac")
+    System
+        .getProperty("os.name")
+        .orEmpty()
+        .lowercase()
+        .contains("mac")
 
 private class MacKeychainTokenStore(
     private val service: String = "com.example.notesai.oauth",
     private val account: String = "default",
 ) : TokenStore {
-
     override fun load(): AuthTokens? =
         security("find-generic-password", "-s", service, "-a", account, "-w")
             ?.trim()
@@ -40,21 +42,25 @@ private class MacKeychainTokenStore(
         security("delete-generic-password", "-s", service, "-a", account)
     }
 
-    private fun security(vararg args: String): String? = runCatching {
-        val process = ProcessBuilder(listOf("/usr/bin/security") + args)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().readText()
-        process.waitFor()
-        output.takeIf { process.exitValue() == 0 }
-    }.getOrNull()
+    private fun security(vararg args: String): String? =
+        runCatching {
+            val process =
+                ProcessBuilder(listOf("/usr/bin/security") + args)
+                    .redirectErrorStream(true)
+                    .start()
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            output.takeIf { process.exitValue() == 0 }
+        }.getOrNull()
 }
 
-private class FileTokenStore(private val file: File) : TokenStore {
-
-    override fun load(): AuthTokens? = runCatching {
-        file.takeIf { it.exists() }?.readText()?.let { authJson.decodeFromString<AuthTokens>(it) }
-    }.getOrNull()
+private class FileTokenStore(
+    private val file: File,
+) : TokenStore {
+    override fun load(): AuthTokens? =
+        runCatching {
+            file.takeIf { it.exists() }?.readText()?.let { authJson.decodeFromString<AuthTokens>(it) }
+        }.getOrNull()
 
     override fun save(tokens: AuthTokens) {
         file.parentFile?.mkdirs()
@@ -70,5 +76,4 @@ private class FileTokenStore(private val file: File) : TokenStore {
     }
 }
 
-private fun defaultTokenFile(): File =
-    File(System.getProperty("user.home"), ".notesai/tokens.json")
+private fun defaultTokenFile(): File = File(System.getProperty("user.home"), ".notesai/tokens.json")

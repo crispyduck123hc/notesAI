@@ -21,14 +21,23 @@ dependencies {
 
 android {
     namespace = "com.example.notesai"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
+    compileSdk =
+        libs.versions.android.compileSdk
+            .get()
+            .toInt()
 
     defaultConfig {
         // Store identity. Deliberately not `com.example.*`: that prefix is unowned (Play
         // rejects it) and it gets baked into the Android OAuth client and the store listing.
         applicationId = "io.github.crispyduck123hc.notesai"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
+        minSdk =
+            libs.versions.android.minSdk
+                .get()
+                .toInt()
+        targetSdk =
+            libs.versions.android.targetSdk
+                .get()
+                .toInt()
         versionCode = 1
         // Same source of truth as the desktop installer name and the version the app displays.
         versionName = providers.gradleProperty("notesai.version").getOrElse("1.0")
@@ -43,7 +52,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
