@@ -124,4 +124,27 @@ class NoteConflictConvergenceTest {
                 assertEquals(a.allNotes.first().size, onB, "round $round: device note counts differ")
             }
         }
+
+    @Test
+    fun theSameEditOnBothDevicesMustNotDuplicateTheNote() =
+        runBlocking {
+            // Two devices making the *same* edit: the same typo fixed, the same word appended, the same
+            // text pasted. Each upload bumps the remote version, so the versions disagree while the
+            // notes themselves do not. A copy here preserves nothing — it is a duplicate.
+            val remote = InMemoryRemote()
+            val a = device()
+            val b = device()
+            a.addNote("base")
+            a.sync(remote)
+            b.sync(remote)
+
+            a.primary().let { a.updateNote(it.id, "same new text") }
+            a.sync(remote)
+
+            b.primary().let { b.updateNote(it.id, "same new text") }
+            NoteSyncEngine(b, remote).sync()
+
+            assertEquals(1, b.allNotes.first().size, "identical texts must not produce a copy")
+            assertEquals("same new text", b.primary().content)
+        }
 }
