@@ -523,6 +523,18 @@ class NoteSyncEngine(
             return Resolution(ConflictOutcome.NONE, published = 1)
         }
 
+        // Both sides changed, but to the same text: a copy would preserve nothing, and keeping one
+        // is how a note becomes a duplicate of itself. This is reachable with one person editing —
+        // two writers uploading identical content each bump the remote version without changing
+        // what the file says, so the *versions* disagree while the notes do not.
+        //
+        // Re-publish rather than only adopting the remote version, so a structural change made here
+        // (a move to another folder, say) still travels, and the baseline ends up current.
+        if (remoteFile.content == local.content) {
+            push(decision)
+            return Resolution(ConflictOutcome.NONE, published = 1)
+        }
+
         // Both edited. Which text becomes *the* note has to come out the same on every device, or
         // the two sides each keep their own text and disagree permanently — which is how one note
         // became nine: the next edit on either side conflicted against the other half of the same
