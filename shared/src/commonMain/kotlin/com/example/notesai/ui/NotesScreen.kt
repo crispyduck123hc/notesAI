@@ -35,7 +35,7 @@ fun NotesScreen(
 
     var expanded by remember { mutableStateOf(setOf(NoteRepository.ROOT_FOLDER_ID)) }
     var selectedFolderId by remember { mutableStateOf(NoteRepository.ROOT_FOLDER_ID) }
-    var selectedNoteId by remember { mutableStateOf<Long?>(null) }
+    var selectedRef by remember { mutableStateOf<NoteRef?>(null) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
     var renamingFolderId by remember { mutableStateOf<Long?>(null) }
     var movingNoteId by remember { mutableStateOf<Long?>(null) }
@@ -43,6 +43,9 @@ fun NotesScreen(
     var showSyncError by remember { mutableStateOf(false) }
 
     val tree = remember(folders, notes, expanded) { buildNoteTree(folders, notes, expanded) }
+    // The row id the tree highlights, and the entity behind the open note. Both are derived from the
+    // selection rather than stored, so a note edited or pulled elsewhere still shows its current text.
+    val selectedNoteId = (selectedRef as? NoteRef.Local)?.id
     val selectedNote = notes.firstOrNull { it.id == selectedNoteId }
 
     // Reads tombstones too (repository lookups, not `notes`), because a delete-vs-edit
@@ -86,7 +89,7 @@ fun NotesScreen(
             },
             onSelectFolder = { selectedFolderId = it },
             onSelectNote = { item ->
-                selectedNoteId = item.id
+                selectedRef = NoteRef.Local(item.id)
                 selectedFolderId = item.parentFolderId
             },
             onDeleteFolder = { id ->
@@ -94,16 +97,16 @@ fun NotesScreen(
                 val removed = folderAndDescendants(id, folders)
                 if (selectedFolderId in removed) selectedFolderId = NoteRepository.ROOT_FOLDER_ID
                 val openNote = notes.firstOrNull { it.id == selectedNoteId }
-                if (openNote != null && openNote.folderId in removed) selectedNoteId = null
+                if (openNote != null && openNote.folderId in removed) selectedRef = null
                 repository.deleteFolder(id)
             },
             onDeleteNote = { id ->
                 repository.deleteNote(id)
-                if (selectedNoteId == id) selectedNoteId = null
+                if (selectedNoteId == id) selectedRef = null
             },
             onRenameFolder = { renamingFolderId = it },
             onMoveNote = { movingNoteId = it },
-            onCreateNote = { selectedNoteId = repository.addNote(folderId = selectedFolderId) },
+            onCreateNote = { selectedRef = NoteRef.Local(repository.addNote(folderId = selectedFolderId)) },
             onCreateFolder = { showNewFolderDialog = true },
             onReviewConflicts = { showConflicts = true },
             onShowSyncError = { showSyncError = true },
@@ -113,7 +116,7 @@ fun NotesScreen(
         VerticalDivider()
 
         NoteEditorPane(
-            note = selectedNote,
+            document = selectedNote?.toDocument(),
             onChange = { text -> selectedNote?.let { repository.updateNote(it.id, text) } },
         )
     }

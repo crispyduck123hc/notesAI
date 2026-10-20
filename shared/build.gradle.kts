@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -196,6 +198,12 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.sqldelight.sqlite.driver)
             implementation(libs.ktor.client.okhttp)
+        }
+        jvmTest.dependencies {
+            // Compose UI tests for the desktop target: `runComposeUiTest` renders a composition into a
+            // virtual scene, so the editor and the folder tree can be driven without a display.
+            implementation(compose.uiTest)
+            implementation(compose.desktop.currentOs)
         }
     }
 }
