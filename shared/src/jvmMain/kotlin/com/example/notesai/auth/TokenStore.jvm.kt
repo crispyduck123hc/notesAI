@@ -7,14 +7,15 @@ import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
 
 /**
- * Desktop token storage.
+ * Desktop token storage, one slot per provider.
  *
  * On macOS this delegates to the login Keychain via the `security` CLI, which is the
  * system credential store and needs no JNI dependency. Every other OS falls back to a
  * 0600 file under the user's home directory — better than plaintext SQLite, but not a
  * real credential store, so this should be replaced with DPAPI/libsecret later.
  */
-fun desktopTokenStore(): TokenStore = if (isMacOs()) MacKeychainTokenStore() else FileTokenStore(defaultTokenFile())
+fun desktopTokenStore(slot: TokenSlot = TokenSlot.GOOGLE): TokenStore =
+    if (isMacOs()) MacKeychainTokenStore(account = slot.key) else FileTokenStore(tokenFileFor(slot))
 
 private fun isMacOs(): Boolean =
     System
@@ -76,4 +77,10 @@ private class FileTokenStore(
     }
 }
 
-private fun defaultTokenFile(): File = File(System.getProperty("user.home"), ".notesai/tokens.json")
+private fun tokenFileFor(slot: TokenSlot): File {
+    val directory = File(System.getProperty("user.home"), ".notesai")
+    // The Google file predates slots, so its name stays as it was: renaming it would sign existing
+    // installs out for no reason.
+    val name = if (slot == TokenSlot.GOOGLE) "tokens.json" else "${slot.key}-tokens.json"
+    return File(directory, name)
+}

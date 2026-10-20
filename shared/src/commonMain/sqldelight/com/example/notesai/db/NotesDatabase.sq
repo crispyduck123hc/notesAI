@@ -81,6 +81,48 @@ CREATE TABLE ConflictInbox (
     conflictCopyUuid TEXT
 );
 
+-- ---- GitHub integration ---------------------------------------------------
+-- A linked repository (the folder in the tree), and the local mirror of its issues.
+--
+-- These are deliberately *separate* from NoteEntity/FolderEntity. Drive sync projects
+-- everything in NoteEntity into the user's Drive app-data folder, so a GitHub note must never
+-- be a row in it: the GitHub folder is self-contained by construction rather than by
+-- remembering to exclude a flag in the sync engine. Nothing in NoteRepository or
+-- NoteSyncEngine reads or writes these tables.
+--
+-- The model is explicit pull/push, so there is no outbox here: `dirty` just means "edited
+-- since the last pull or push", and the user's push button decides when that travels.
+CREATE TABLE GitHubRepoEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    installationId INTEGER NOT NULL,
+    linkedAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubRepoEntity_owner_name ON GitHubRepoEntity(owner, name);
+
+-- One row per issue. `number` is the issue number: stable per repository, and the identity
+-- of the row (never the local `id`, which is only meaningful on this device).
+CREATE TABLE GitHubIssueNoteEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repoId INTEGER NOT NULL REFERENCES GitHubRepoEntity(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    -- 'open' or 'closed'. Pulled from GitHub; this app never deletes an issue.
+    state TEXT NOT NULL,
+    -- What GitHub reported when this row was last pulled or pushed. A different value on the
+    -- remote means the issue moved underneath a local edit, which push reports instead of
+    -- overwriting.
+    remoteUpdatedAt TEXT NOT NULL,
+    -- 0/1: edited locally, not yet pushed.
+    dirty INTEGER NOT NULL DEFAULT 0,
+    pulledAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubIssueNoteEntity_repo_number ON GitHubIssueNoteEntity(repoId, number);
+
 -- ---- Folders --------------------------------------------------------------
 
 selectAllFolders:
@@ -259,3 +301,67 @@ UPDATE NoteEntity SET folderId = ?, updatedAt = ? WHERE id = ?;
 -- Id of the row inserted by the most recent INSERT on this connection
 lastInsertRowId:
 SELECT CAST(last_insert_rowid() AS INTEGER) AS id;
+
+-- ---- GitHub: linked repositories and the issue mirror ----------------------
+--
+-- Deliberately no `ON CONFLICT ... DO UPDATE` (SQLDelight's grammar rejects it): the repository
+-- chooses between insert and update, which is also where the "never overwrite unpushed edits" rule
+-- belongs, so it can be tested rather than inferred from SQL.
+
+insertGitHubRepo:
+INSERT INTO GitHubRepoEntity(owner, name, installationId, linkedAt)
+VALUES (?, ?, ?, ?);
+
+updateGitHubRepoInstallation:
+UPDATE GitHubRepoEntity SET installationId = ? WHERE id = ?;
+
+selectGitHubRepoById:
+SELECT * FROM GitHubRepoEntity WHERE id = ?;
+
+selectGitHubRepoByOwnerName:
+SELECT * FROM GitHubRepoEntity WHERE owner = ? AND name = ?;
+
+selectAllGitHubRepos:
+SELECT * FROM GitHubRepoEntity ORDER BY owner, name;
+
+deleteGitHubRepo:
+DELETE FROM GitHubRepoEntity WHERE id = ?;
+
+selectGitHubIssues:
+SELECT * FROM GitHubIssueNoteEntity WHERE repoId = ? ORDER BY number;
+
+selectGitHubIssue:
+SELECT * FROM GitHubIssueNoteEntity WHERE repoId = ? AND number = ?;
+
+insertGitHubIssue:
+INSERT INTO GitHubIssueNoteEntity(repoId, number, title, body, state, remoteUpdatedAt, dirty, pulledAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- What a pull writes into a row that already exists. `dirty` is set to 0 because the caller only
+-- takes this path when it has decided the row may be overwritten.
+updateGitHubIssueFromPull:
+UPDATE GitHubIssueNoteEntity
+SET title = ?, body = ?, state = ?, remoteUpdatedAt = ?, dirty = 0, pulledAt = ?
+WHERE repoId = ? AND number = ?;
+
+markGitHubIssueDirty:
+UPDATE GitHubIssueNoteEntity SET title = ?, body = ?, dirty = 1 WHERE repoId = ? AND number = ?;
+
+-- Push succeeded: adopt GitHub's response as the new baseline and clear the local edit flag.
+markGitHubIssueClean:
+UPDATE GitHubIssueNoteEntity
+SET title = ?, body = ?, state = ?, remoteUpdatedAt = ?, dirty = 0
+WHERE repoId = ? AND number = ?;
+
+-- Completion changed on GitHub while a local text edit is still pending: take the state and the new
+-- timestamp, but keep the local text so the pending edit is not lost.
+markGitHubIssueState:
+UPDATE GitHubIssueNoteEntity
+SET state = ?, remoteUpdatedAt = ?
+WHERE repoId = ? AND number = ?;
+
+deleteGitHubIssue:
+DELETE FROM GitHubIssueNoteEntity WHERE repoId = ? AND number = ?;
+
+deleteGitHubIssuesForRepo:
+DELETE FROM GitHubIssueNoteEntity WHERE repoId = ?;

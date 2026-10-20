@@ -1,0 +1,39 @@
+-- 4.sqm : v4 -> v5
+--
+-- Adds the GitHub integration's own storage. Nothing reads these tables yet: the migration
+-- exists so the schema is settled and the shape can be reviewed before any code depends on it.
+--
+-- They are deliberately not part of NoteEntity/FolderEntity. Drive sync projects everything in
+-- NoteEntity into the user's Drive app-data folder, so a GitHub issue must never be a row there.
+-- Keeping it in separate tables makes that isolation structural: there is no flag for the sync
+-- engine to forget to check.
+--
+--   * GitHubRepoEntity      - a linked repository, which is the folder in the tree.
+--   * GitHubIssueNoteEntity - the local mirror of one issue, identified by its issue number.
+--
+-- Explicit pull/push, so no outbox: `dirty` means "edited since the last pull or push" and the
+-- user decides when that travels.
+
+CREATE TABLE GitHubRepoEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    installationId INTEGER NOT NULL,
+    linkedAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubRepoEntity_owner_name ON GitHubRepoEntity(owner, name);
+
+CREATE TABLE GitHubIssueNoteEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repoId INTEGER NOT NULL REFERENCES GitHubRepoEntity(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    state TEXT NOT NULL,
+    remoteUpdatedAt TEXT NOT NULL,
+    dirty INTEGER NOT NULL DEFAULT 0,
+    pulledAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubIssueNoteEntity_repo_number ON GitHubIssueNoteEntity(repoId, number);

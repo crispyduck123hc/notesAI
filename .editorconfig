@@ -24,3 +24,13 @@ ktlint_standard_filename = disabled
 # `MainViewControllerKt.MainViewController()`. It is capitalised by convention, and renaming it would
 # mean changing the Swift call site to match a lint rule.
 ktlint_standard_function-naming = disabled
+
+# Generated Kotlin — SQLDelight's interfaces, Compose's resource collectors, and the secret and
+# version constants the build writes — is not ours to format. The ktlint Gradle plugin's filters
+# reach its *check* tasks but not its *format* tasks, so `ktlintFormat` would otherwise try to
+# reformat generated code and fail on a line it cannot shorten. Rules are switched off for that
+# subtree rather than the files excluded, because scoping by path is all ktlint offers here.
+[**/build/generated/**/*.kt]
+ktlint_standard_indent = disabled
+ktlint_standard_import-ordering = disabled
+ktlint_standard_max-line-length = disabled

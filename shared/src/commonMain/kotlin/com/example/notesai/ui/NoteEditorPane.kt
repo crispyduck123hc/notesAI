@@ -21,7 +21,6 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.sp
-import com.example.notesai.db.NoteEntity
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -40,10 +39,10 @@ private const val WRITE_DEBOUNCE_MS = 300L
 @OptIn(FlowPreview::class)
 @Composable
 internal fun NoteEditorPane(
-    note: NoteEntity?,
+    document: NoteDocument?,
     onChange: (String) -> Unit,
 ) {
-    if (note == null) {
+    if (document == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 text = "Select or create a note",
@@ -54,12 +53,12 @@ internal fun NoteEditorPane(
     }
 
     // Local state is the source of truth while editing; the DB write is the sink.
-    // Keyed on note.id so it re-initializes only when a different note is selected,
+    // Keyed on the document's identity so it re-initializes only when a different note is selected,
     // so the async Flow re-emission from our own write can't clobber what's typed.
-    val textState = remember(note.id) { mutableStateOf(note.content) }
+    val textState = remember(document.ref) { mutableStateOf(document.content) }
 
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
-    LaunchedEffect(note.id) {
+    LaunchedEffect(document.ref) {
         snapshotFlow { textState.value }
             .drop(1) // ignore the value already persisted
             .debounce(WRITE_DEBOUNCE_MS)
@@ -69,7 +68,7 @@ internal fun NoteEditorPane(
     // Flush the pending text when switching notes or leaving the screen. `textState`
     // and `onChange` are captured from the composition where this effect launched, so
     // the flush targets the note that was actually being edited.
-    DisposableEffect(note.id) {
+    DisposableEffect(document.ref) {
         onDispose { onChange(textState.value) }
     }
 
