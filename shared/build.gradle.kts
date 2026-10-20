@@ -75,6 +75,12 @@ val generateLocalSecrets by tasks.registering {
             "DESKTOP_CLIENT_SECRET" to localProperties.getProperty("google.desktop.clientSecret").orEmpty(),
             "IOS_CLIENT_ID" to localProperties.getProperty("google.ios.clientId").orEmpty(),
             "ANDROID_CLIENT_ID" to localProperties.getProperty("google.android.clientId").orEmpty(),
+            // GitHub App. The client secret is required by GitHub's token endpoint even with PKCE,
+            // and is treated as non-confidential for a distributed client — the same position as
+            // the Google desktop secret above. The app's private key is deliberately absent: nothing
+            // here needs installation tokens, and that key must never ship in a binary.
+            "GITHUB_CLIENT_ID" to localProperties.getProperty("github.clientId").orEmpty(),
+            "GITHUB_CLIENT_SECRET" to localProperties.getProperty("github.clientSecret").orEmpty(),
         )
     inputs.properties(values)
     outputs.dir(outputDir)

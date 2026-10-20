@@ -81,6 +81,48 @@ CREATE TABLE ConflictInbox (
     conflictCopyUuid TEXT
 );
 
+-- ---- GitHub integration ---------------------------------------------------
+-- A linked repository (the folder in the tree), and the local mirror of its issues.
+--
+-- These are deliberately *separate* from NoteEntity/FolderEntity. Drive sync projects
+-- everything in NoteEntity into the user's Drive app-data folder, so a GitHub note must never
+-- be a row in it: the GitHub folder is self-contained by construction rather than by
+-- remembering to exclude a flag in the sync engine. Nothing in NoteRepository or
+-- NoteSyncEngine reads or writes these tables.
+--
+-- The model is explicit pull/push, so there is no outbox here: `dirty` just means "edited
+-- since the last pull or push", and the user's push button decides when that travels.
+CREATE TABLE GitHubRepoEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    installationId INTEGER NOT NULL,
+    linkedAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubRepoEntity_owner_name ON GitHubRepoEntity(owner, name);
+
+-- One row per issue. `number` is the issue number: stable per repository, and the identity
+-- of the row (never the local `id`, which is only meaningful on this device).
+CREATE TABLE GitHubIssueNoteEntity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repoId INTEGER NOT NULL REFERENCES GitHubRepoEntity(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    -- 'open' or 'closed'. Pulled from GitHub; this app never deletes an issue.
+    state TEXT NOT NULL,
+    -- What GitHub reported when this row was last pulled or pushed. A different value on the
+    -- remote means the issue moved underneath a local edit, which push reports instead of
+    -- overwriting.
+    remoteUpdatedAt TEXT NOT NULL,
+    -- 0/1: edited locally, not yet pushed.
+    dirty INTEGER NOT NULL DEFAULT 0,
+    pulledAt INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX GitHubIssueNoteEntity_repo_number ON GitHubIssueNoteEntity(repoId, number);
+
 -- ---- Folders --------------------------------------------------------------
 
 selectAllFolders:
