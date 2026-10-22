@@ -443,8 +443,7 @@ class NoteSyncEngine(
         if (entry != null) repository.setBaseline(EntityType.FOLDER, file.uuid, entry.fileId, entry.version)
     }
 
-    private fun parentIdFor(file: FolderFile): Long =
-        file.parentUuid?.let { repository.folderIdByUuid(it) } ?: NoteRepository.ROOT_FOLDER_ID
+    private fun parentIdFor(file: FolderFile): Long = file.parentUuid?.let { repository.folderIdByUuid(it) } ?: NoteRepository.ROOT_FOLDER_ID
 
     private suspend fun pullNotes(decisions: List<Decision>): Int {
         var applied = 0
@@ -593,8 +592,7 @@ class NoteSyncEngine(
 
     // ---- Helpers -----------------------------------------------------------
 
-    private fun parentUuidFor(folderId: Long): String =
-        repository.folderUuidById(folderId) ?: NoteRepository.ROOT_FOLDER_UUID
+    private fun parentUuidFor(folderId: Long): String = repository.folderUuidById(folderId) ?: NoteRepository.ROOT_FOLDER_UUID
 
     private fun localRevisionOf(decision: Decision): String? =
         when (decision.entityType) {

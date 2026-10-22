@@ -19,11 +19,17 @@ import javax.crypto.spec.GCMParameterSpec
  */
 class AndroidKeystoreTokenStore(
     context: Context,
+    slot: TokenSlot = TokenSlot.GOOGLE,
 ) : TokenStore {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    // One key and one preference per provider, so signing out of GitHub cannot disturb the Google
+    // sign-in. The Google names are left exactly as they were, so an existing install keeps its login.
+    private val keyAlias = if (slot == TokenSlot.GOOGLE) KEY_ALIAS else "$KEY_ALIAS.${slot.key}"
+    private val tokensKey = if (slot == TokenSlot.GOOGLE) TOKENS_KEY else "$TOKENS_KEY.${slot.key}"
+
     override fun load(): AuthTokens? {
-        val stored = prefs.getString(TOKENS_KEY, null) ?: return null
+        val stored = prefs.getString(tokensKey, null) ?: return null
         return runCatching {
             val blob = Base64.decode(stored, Base64.NO_WRAP)
             val iv = blob.copyOfRange(0, GCM_IV_BYTES)
@@ -42,23 +48,23 @@ class AndroidKeystoreTokenStore(
         val blob = cipher.iv + ciphertext
         prefs
             .edit()
-            .putString(TOKENS_KEY, Base64.encodeToString(blob, Base64.NO_WRAP))
+            .putString(tokensKey, Base64.encodeToString(blob, Base64.NO_WRAP))
             .apply()
     }
 
     override fun clear() {
-        prefs.edit().remove(TOKENS_KEY).apply()
+        prefs.edit().remove(tokensKey).apply()
     }
 
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
+        (keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
 
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         generator.init(
             KeyGenParameterSpec
                 .Builder(
-                    KEY_ALIAS,
+                    keyAlias,
                     KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
                 ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)

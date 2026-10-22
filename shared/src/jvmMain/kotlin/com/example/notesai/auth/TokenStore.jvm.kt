@@ -14,8 +14,7 @@ import java.nio.file.attribute.PosixFilePermissions
  * 0600 file under the user's home directory — better than plaintext SQLite, but not a
  * real credential store, so this should be replaced with DPAPI/libsecret later.
  */
-fun desktopTokenStore(slot: TokenSlot = TokenSlot.GOOGLE): TokenStore =
-    if (isMacOs()) MacKeychainTokenStore(account = slot.key) else FileTokenStore(tokenFileFor(slot))
+fun desktopTokenStore(slot: TokenSlot = TokenSlot.GOOGLE): TokenStore = if (isMacOs()) MacKeychainTokenStore(account = slot.key) else FileTokenStore(tokenFileFor(slot))
 
 private fun isMacOs(): Boolean =
     System

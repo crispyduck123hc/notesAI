@@ -15,13 +15,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import com.example.notesai.auth.AccountInfo
+import com.example.notesai.auth.GitHubAuthManager
 import com.example.notesai.auth.GoogleAuthManager
 import com.example.notesai.auth.TokenStore
+import com.example.notesai.auth.defaultGitHubOAuthConfig
 import com.example.notesai.auth.defaultOAuthConfig
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.data.accountDatabaseName
 import com.example.notesai.db.DatabaseDriverFactory
 import com.example.notesai.drive.DriveClient
+import com.example.notesai.github.GitHubClient
+import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.ui.LoginScreen
@@ -54,6 +58,11 @@ private const val REAUTHORIZATION_MESSAGE =
 fun App(
     driverFactory: DatabaseDriverFactory,
     tokenStore: TokenStore,
+    /**
+     * GitHub keeps its own credential slot: the two providers are independent, so signing out of one
+     * must not disturb the other.
+     */
+    gitHubTokenStore: TokenStore,
     // Desktop supplies a remembered instance so its window-close handler can drain the queue.
     // Mobile has no equivalent hook, so the default is simply never used there.
     exitFlush: ExitFlush = remember { ExitFlush() },
@@ -63,8 +72,13 @@ fun App(
         remember(http, tokenStore) {
             GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
         }
+    val gitHubAuth =
+        remember(http, gitHubTokenStore) {
+            GitHubAuthManager(config = defaultGitHubOAuthConfig(), store = gitHubTokenStore, http = http)
+        }
 
     var account by remember { mutableStateOf<AccountInfo?>(null) }
+    var gitHubLogin by remember { mutableStateOf<String?>(null) }
     var restoring by remember { mutableStateOf(true) }
     var signingIn by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -73,6 +87,11 @@ fun App(
     LaunchedEffect(auth) {
         account = auth.restore()
         restoring = false
+    }
+
+    // GitHub is restored independently: it is an optional extra, not part of signing in.
+    LaunchedEffect(gitHubAuth) {
+        gitHubLogin = gitHubAuth.restore()?.login
     }
 
     NotesAiTheme {
@@ -111,12 +130,23 @@ fun App(
                     http = http,
                     accessToken = auth::accessToken,
                     exitFlush = exitFlush,
+                    gitHubAuth = gitHubAuth,
+                    gitHubLogin = gitHubLogin,
+                    onConnectGitHub = {
+                        gitHubAuth.signIn()
+                        gitHubLogin = gitHubAuth.restore()?.login
+                    },
                     // A sign-in that looks unable to sync is mentioned up front, but the user is
                     // never signed out over it: this comparison has been wrong before, and the
                     // consequence of guessing wrong must not be losing access to your own notes.
                     // Any real failure still arrives with the same advice, from Google itself.
                     signInWarning = if (auth.needsReauthorization()) REAUTHORIZATION_MESSAGE else null,
                     onSignOut = {
+                        // Signing out of the account also disconnects GitHub: the GitHub links live in
+                        // this account's database, so leaving a token behind for the next account
+                        // would show them someone else's repositories.
+                        gitHubAuth.signOut()
+                        gitHubLogin = null
                         auth.signOut()
                         account = null
                     },
@@ -136,19 +166,32 @@ private fun AccountNotes(
     http: HttpClient,
     accessToken: suspend () -> String?,
     exitFlush: ExitFlush,
+    gitHubAuth: GitHubAuthManager,
+    gitHubLogin: String?,
+    onConnectGitHub: suspend () -> Unit,
     signInWarning: String?,
     onSignOut: () -> Unit,
 ) {
     val scopeName = remember(account) { accountDatabaseName(account.email) }
 
+    // One driver for the whole account, shared by the note repository and the GitHub mirror. Two
+    // SQLite connections to one file would work, but two views of the same database is a needless
+    // way to get surprises.
+    val driver = remember(scopeName) { driverFactory.createDriver(scopeName) }
     val repository =
-        remember(scopeName) {
-            NoteRepository(driverFactory, scopeName).also { it.recordAccountScope(scopeName) }
+        remember(driver) {
+            NoteRepository(driver).also { it.recordAccountScope(scopeName) }
         }
 
     // Tripwire: the database is named after the account, so a mismatch means something is
     // badly wrong. Refuse to sync rather than merge two accounts' notes.
     val accountMismatch = remember(scopeName) { repository.storedAccountScope() != scopeName }
+
+    val gitHubClient =
+        remember(http, gitHubAuth) {
+            GitHubClient(http = http, accessToken = gitHubAuth::accessToken)
+        }
+    val gitHubRepository = remember(driver, gitHubClient) { GitHubIssueRepository(driver, gitHubClient) }
 
     val drive = remember(http, accessToken) { DriveClient(http, accessToken) }
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
@@ -214,6 +257,10 @@ private fun AccountNotes(
         syncStatus = syncStatus,
         syncError = syncError,
         syncing = syncing,
+        gitHubRepository = gitHubRepository,
+        gitHubClient = gitHubClient,
+        gitHubLogin = gitHubLogin,
+        onConnectGitHub = onConnectGitHub,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {

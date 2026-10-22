@@ -41,6 +41,11 @@ internal fun NoteTreeRow(
     onRename: (() -> Unit)?,
     onMove: (() -> Unit)?,
     deletable: Boolean,
+    /** Small secondary label, e.g. an issue's state. */
+    badge: String? = null,
+    /** Offered for GitHub issues only: closes or reopens the issue on GitHub. */
+    onComplete: (() -> Unit)? = null,
+    completeLabel: String? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -78,6 +83,14 @@ internal fun NoteTreeRow(
                 modifier = Modifier.weight(1f),
             )
 
+            if (badge != null) {
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (deletable) {
                 TextButton(onClick = onDelete) {
                     Text("\u2715")
@@ -101,6 +114,15 @@ internal fun NoteTreeRow(
                     onClick = {
                         menuOpen = false
                         move()
+                    },
+                )
+            }
+            if (onComplete != null && completeLabel != null) {
+                DropdownMenuItem(
+                    text = { Text(completeLabel) },
+                    onClick = {
+                        menuOpen = false
+                        onComplete()
                     },
                 )
             }

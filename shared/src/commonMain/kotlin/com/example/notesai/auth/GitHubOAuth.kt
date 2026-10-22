@@ -58,3 +58,17 @@ data class GitHubOAuthConfig(
 data class GitHubAccount(
     val login: String?,
 )
+
+/**
+ * The app's own GitHub App credentials, generated from `local.properties`.
+ *
+ * One definition rather than one per platform, unlike the Google config, because GitHub sign-in is
+ * implemented on desktop only — [authorizeInteractively] throws on Android and iOS today. When mobile
+ * sign-in arrives it will need its own callback (a URL scheme, not a loopback port) and this becomes
+ * per-platform in the same way.
+ */
+fun defaultGitHubOAuthConfig(): GitHubOAuthConfig =
+    GitHubOAuthConfig(
+        clientId = LocalSecrets.GITHUB_CLIENT_ID,
+        clientSecret = LocalSecrets.GITHUB_CLIENT_SECRET.ifBlank { null },
+    )

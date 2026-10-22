@@ -30,12 +30,13 @@ import kotlinx.collections.immutable.ImmutableList
 internal fun NoteTreePane(
     tree: ImmutableList<NoteTreeItem>,
     selectedFolderId: Long,
-    selectedNoteId: Long?,
+    selectedRef: NoteRef?,
     accountEmail: String?,
     syncStatus: String?,
     hasSyncError: Boolean,
     syncing: Boolean,
     conflictCount: Int,
+    gitHub: GitHubPaneState,
     onToggle: (Long) -> Unit,
     onSelectFolder: (Long) -> Unit,
     onSelectNote: (NoteTreeItem) -> Unit,
@@ -69,24 +70,50 @@ internal fun NoteTreePane(
         Spacer(modifier = Modifier.height(Dimens.Gutter))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(tree, key = { if (it.isFolder) "f${it.id}" else "n${it.id}" }) { item ->
+            // Keyed on the ref for note rows: several GitHub issue rows share the unused local id 0,
+            // and duplicate keys would confuse the list.
+            items(tree, key = { it.ref?.toString() ?: "f${it.id}" }) { item ->
+                val gitHubIssue = item.ref as? NoteRef.GitHubIssue
+                val localRef = item.ref as? NoteRef.Local
+                val isLocalRow = item.source == NoteSource.LOCAL
+
                 NoteTreeRow(
                     item = item,
                     selected =
                         if (item.isFolder) {
                             item.id == selectedFolderId
                         } else {
-                            item.id == selectedNoteId
+                            item.ref == selectedRef
                         },
                     onToggle = { onToggle(item.id) },
                     onClick = { if (item.isFolder) onSelectFolder(item.id) else onSelectNote(item) },
-                    onDelete = { if (item.isFolder) onDeleteFolder(item.id) else onDeleteNote(item.id) },
-                    onRename = if (item.isFolder) ({ onRenameFolder(item.id) }) else null,
-                    onMove = if (item.isFolder) null else ({ onMoveNote(item.id) }),
-                    deletable = !(item.isFolder && item.depth == 0), // never delete root
+                    onDelete = {
+                        when {
+                            item.isFolder -> onDeleteFolder(item.id)
+                            localRef != null -> onDeleteNote(localRef.id)
+                        }
+                    },
+                    onRename = if (item.isFolder && isLocalRow) ({ onRenameFolder(item.id) }) else null,
+                    onMove = if (localRef != null) ({ onMoveNote(localRef.id) }) else null,
+                    // A linked repository is unlinked from its action row, not deleted like a folder.
+                    deletable = isLocalRow && !(item.isFolder && item.depth == 0),
+                    badge = item.badge,
+                    onComplete =
+                        gitHubIssue?.let { issue ->
+                            ({ gitHub.onToggleComplete(issue.repoId, issue.number, item.badge != "Closed") })
+                        },
+                    completeLabel =
+                        if (gitHubIssue != null) {
+                            if (item.badge == "Closed") "Reopen" else "Mark complete"
+                        } else {
+                            null
+                        },
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(Dimens.Gutter))
+        GitHubSection(gitHub)
 
         Spacer(modifier = Modifier.height(Dimens.Gutter))
         HorizontalDivider()
@@ -164,5 +191,71 @@ internal fun NoteTreePane(
             maxLines = 1,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+/**
+ * The GitHub folder's controls.
+ *
+ * The actions belong to a *repository*, not to the app, so they appear when that repository's node is
+ * selected rather than as buttons on every row. Pull and Force pull are separate on purpose: one keeps
+ * unpushed local edits, the other deliberately discards them.
+ */
+@Composable
+private fun GitHubSection(gitHub: GitHubPaneState) {
+    if (gitHub.login == null) {
+        TextButton(
+            onClick = gitHub.onConnect,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !gitHub.busy,
+        ) {
+            Text("Connect GitHub\u2026")
+        }
+        return
+    }
+
+    Text(
+        text = "GitHub: ${gitHub.login}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    TextButton(
+        onClick = gitHub.onLink,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !gitHub.busy,
+    ) {
+        Text(if (gitHub.repos.isEmpty()) "Link a repository\u2026" else "Link another repository\u2026")
+    }
+
+    val repo = gitHub.selectedRepo ?: return
+    Text(
+        text = "${repo.owner}/${repo.name}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { gitHub.onPull(repo.id) }, enabled = !gitHub.busy) {
+            Text("Pull")
+        }
+        Spacer(modifier = Modifier.width(4.dp))
+        OutlinedButton(onClick = { gitHub.onPush(repo.id) }, enabled = !gitHub.busy) {
+            Text("Push")
+        }
+    }
+    Row(modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = { gitHub.onForcePull(repo.id) }, enabled = !gitHub.busy) {
+            Text("Force pull\u2026")
+        }
+        Spacer(modifier = Modifier.width(4.dp))
+        TextButton(onClick = { gitHub.onUnlink(repo.id) }, enabled = !gitHub.busy) {
+            Text("Unlink")
+        }
     }
 }

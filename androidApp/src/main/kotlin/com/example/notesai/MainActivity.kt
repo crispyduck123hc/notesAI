@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.notesai.auth.AndroidKeystoreTokenStore
+import com.example.notesai.auth.TokenSlot
 import com.example.notesai.db.DatabaseDriverFactory
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
             App(
                 driverFactory = driverFactory,
                 tokenStore = AndroidKeystoreTokenStore(context = this),
+                gitHubTokenStore = AndroidKeystoreTokenStore(context = this, slot = TokenSlot.GITHUB),
             )
         }
     }

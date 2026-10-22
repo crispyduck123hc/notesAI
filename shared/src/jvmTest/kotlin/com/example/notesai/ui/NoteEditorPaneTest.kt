@@ -28,7 +28,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
-                    document = NoteDocument(ref = NoteRef.Local(1), content = "first line\nbody"),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "first line", content = "first line\nbody"),
                     onChange = {},
                 )
             }
@@ -52,7 +52,7 @@ class NoteEditorPaneTest {
             val writes = mutableListOf<String>()
             setContent {
                 NoteEditorPane(
-                    document = NoteDocument(ref = NoteRef.Local(1), content = ""),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "", content = ""),
                     onChange = { writes += it },
                 )
             }
@@ -83,6 +83,7 @@ class NoteEditorPaneTest {
                 val document =
                     NoteDocument(
                         ref = current,
+                        title = if (current == NoteRef.Local(1)) "one" else "two",
                         content = if (current == NoteRef.Local(1)) "one" else "two",
                     )
                 NoteEditorPane(

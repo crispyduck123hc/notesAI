@@ -157,8 +157,7 @@ class GoogleAuthManager(
         return refreshed.accessToken
     }
 
-    private fun clientSecretParam(): Array<Pair<String, String>> =
-        config.clientSecret?.let { arrayOf("client_secret" to it) } ?: emptyArray()
+    private fun clientSecretParam(): Array<Pair<String, String>> = config.clientSecret?.let { arrayOf("client_secret" to it) } ?: emptyArray()
 
     private suspend fun requestToken(vararg params: Pair<String, String>): TokenResponse {
         val body =

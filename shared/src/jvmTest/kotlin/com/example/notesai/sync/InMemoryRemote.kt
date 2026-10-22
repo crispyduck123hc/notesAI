@@ -18,11 +18,9 @@ class InMemoryRemote : SyncRemote {
     /** Total number of files the remote holds (including tombstones). */
     val size: Int get() = files.size
 
-    override suspend fun list(): List<RemoteEntry> =
-        files.map { (id, stored) -> RemoteEntry(fileId = id, name = stored.name, version = stored.version.toString()) }
+    override suspend fun list(): List<RemoteEntry> = files.map { (id, stored) -> RemoteEntry(fileId = id, name = stored.name, version = stored.version.toString()) }
 
-    override suspend fun download(fileId: String): String =
-        files[fileId]?.content ?: error("no remote file with id $fileId")
+    override suspend fun download(fileId: String): String = files[fileId]?.content ?: error("no remote file with id $fileId")
 
     override suspend fun create(
         name: String,

@@ -2,21 +2,32 @@ package com.example.notesai.ui
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.github.GitHubClient
+import com.example.notesai.github.GitHubIssueRepository
+import com.example.notesai.github.GitHubPushResult
+import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Top-level screen: owns the selection/expansion state and wires the tree pane to the
  * editor pane. All presentation detail lives in the child composables.
+ *
+ * The GitHub folder is explicit: nothing happens to it until a button is pressed.
  */
 @Composable
 fun NotesScreen(
@@ -25,6 +36,11 @@ fun NotesScreen(
     syncStatus: String?,
     syncError: String?,
     syncing: Boolean,
+    gitHubRepository: GitHubIssueRepository,
+    gitHubClient: GitHubClient,
+    /** Null when GitHub is not connected. */
+    gitHubLogin: String?,
+    onConnectGitHub: suspend () -> Unit,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
@@ -32,6 +48,8 @@ fun NotesScreen(
     val folders by repository.allFolders.collectAsState(initial = emptyList())
     val notes by repository.allNotes.collectAsState(initial = emptyList())
     val conflicts by repository.conflicts.collectAsState(initial = emptyList())
+    val gitHubRepos by gitHubRepository.linkedRepos.collectAsState(initial = emptyList())
+    val gitHubIssues by gitHubRepository.allIssues.collectAsState(initial = emptyList())
 
     var expanded by remember { mutableStateOf(setOf(NoteRepository.ROOT_FOLDER_ID)) }
     var selectedFolderId by remember { mutableStateOf(NoteRepository.ROOT_FOLDER_ID) }
@@ -42,11 +60,66 @@ fun NotesScreen(
     var showConflicts by remember { mutableStateOf(false) }
     var showSyncError by remember { mutableStateOf(false) }
 
-    val tree = remember(folders, notes, expanded) { buildNoteTree(folders, notes, expanded) }
+    // GitHub folder state. `busy` guards the buttons: a pull is a network round trip, and pressing it
+    // twice must not start two of them.
+    var gitHubBusy by remember { mutableStateOf(false) }
+    var gitHubError by remember { mutableStateOf<String?>(null) }
+    var gitHubNotice by remember { mutableStateOf<String?>(null) }
+    var linkableRepos by remember { mutableStateOf<List<LinkableRepo>?>(null) }
+    var linkLoading by remember { mutableStateOf(false) }
+    var linkError by remember { mutableStateOf<String?>(null) }
+    var forcePullTarget by remember { mutableStateOf<Long?>(null) }
+
+    val scope = rememberCoroutineScope()
+
+    val tree =
+        remember(folders, notes, expanded, gitHubRepos, gitHubIssues) {
+            buildNoteTree(folders, notes, expanded, gitHubRepos, gitHubIssues)
+        }
     // The row id the tree highlights, and the entity behind the open note. Both are derived from the
     // selection rather than stored, so a note edited or pulled elsewhere still shows its current text.
     val selectedNoteId = (selectedRef as? NoteRef.Local)?.id
     val selectedNote = notes.firstOrNull { it.id == selectedNoteId }
+    val selectedRepo = gitHubRepos.firstOrNull { gitHubRepoNodeId(it.id) == selectedFolderId }
+
+    /**
+     * Local folder ids are positive and GitHub nodes are negative, so a negative selection must never
+     * be used as a folder id — `New Note` would otherwise write a note into a folder that does not
+     * exist.
+     */
+    val selectedLocalFolderId = selectedFolderId.takeIf { it > 0 } ?: NoteRepository.ROOT_FOLDER_ID
+
+    val selectedDocument: NoteDocument? =
+        when (val ref = selectedRef) {
+            is NoteRef.Local -> notes.firstOrNull { it.id == ref.id }?.toDocument()
+            is NoteRef.GitHubIssue ->
+                gitHubIssues
+                    .firstOrNull { it.repoId == ref.repoId && it.number == ref.number }
+                    ?.toDocument()
+
+            null -> null
+        }
+
+    /** Runs a GitHub action with uniform busy/error reporting. Returns a message worth showing. */
+    fun runGitHub(block: suspend () -> String?) {
+        scope.launch {
+            gitHubBusy = true
+            try {
+                block()?.let { gitHubNotice = it }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (
+                // Broad on purpose: every GitHub failure is reported the same way, with whatever the
+                // client already turned into a sentence.
+                @Suppress("TooGenericExceptionCaught")
+                t: Throwable,
+            ) {
+                gitHubError = t.message ?: t.toString()
+            } finally {
+                gitHubBusy = false
+            }
+        }
+    }
 
     // Reads tombstones too (repository lookups, not `notes`), because a delete-vs-edit
     // conflict's local side is precisely a row the normal query hides.
@@ -78,22 +151,88 @@ fun NotesScreen(
         NoteTreePane(
             tree = tree,
             selectedFolderId = selectedFolderId,
-            selectedNoteId = selectedNoteId,
+            selectedRef = selectedRef,
             accountEmail = account.email,
             syncStatus = syncStatus,
             hasSyncError = syncError != null,
             syncing = syncing,
             conflictCount = conflictItems.size,
-            onToggle = { id ->
-                expanded = if (id in expanded) expanded - id else expanded + id
-            },
+            gitHub =
+                GitHubPaneState(
+                    login = gitHubLogin,
+                    repos = gitHubRepos,
+                    selectedRepo = selectedRepo,
+                    busy = gitHubBusy,
+                    onConnect = {
+                        runGitHub {
+                            onConnectGitHub()
+                            "Connected to GitHub"
+                        }
+                    },
+                    onLink = {
+                        linkableRepos = emptyList()
+                        linkError = null
+                        linkLoading = true
+                        scope.launch {
+                            try {
+                                // Installations first: the app can only see repositories the GitHub App
+                                // was installed on, and only ones this user can push to.
+                                linkableRepos =
+                                    gitHubClient.installations().flatMap { installation ->
+                                        gitHubClient
+                                            .installationRepositories(installation.id)
+                                            .map { LinkableRepo(installationId = installation.id, repo = it) }
+                                    }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (
+                                @Suppress("TooGenericExceptionCaught")
+                                t: Throwable,
+                            ) {
+                                linkError = t.message ?: t.toString()
+                            } finally {
+                                linkLoading = false
+                            }
+                        }
+                    },
+                    onPull = { repoId ->
+                        runGitHub {
+                            val result = gitHubRepository.pull(repoId, force = false)
+                            val skipped =
+                                if (result.skippedLocalEdits > 0) {
+                                    ", ${result.skippedLocalEdits} kept local (unpushed)"
+                                } else {
+                                    ""
+                                }
+                            "Pulled ${result.pulled} issue(s), removed ${result.pruned}$skipped"
+                        }
+                    },
+                    onForcePull = { repoId -> forcePullTarget = repoId },
+                    onPush = { repoId ->
+                        runGitHub {
+                            val result = gitHubRepository.push(repoId)
+                            describePush(result)
+                        }
+                    },
+                    onUnlink = { repoId ->
+                        gitHubRepository.unlinkRepo(repoId)
+                        if (selectedRepo?.id == repoId) selectedRef = null
+                    },
+                    onToggleComplete = { repoId, number, completed ->
+                        runGitHub {
+                            gitHubRepository.setComplete(repoId, number, completed)
+                            if (completed) "Closed the issue on GitHub" else "Reopened the issue on GitHub"
+                        }
+                    },
+                ),
+            onToggle = { id -> expanded = if (id in expanded) expanded - id else expanded + id },
             onSelectFolder = { selectedFolderId = it },
             onSelectNote = { item ->
-                selectedRef = NoteRef.Local(item.id)
+                item.ref?.let { selectedRef = it }
                 selectedFolderId = item.parentFolderId
             },
             onDeleteFolder = { id ->
-                // Clear selection if the open note or active folder is being removed.
+                // Clear selection if the open local note or active folder is being removed.
                 val removed = folderAndDescendants(id, folders)
                 if (selectedFolderId in removed) selectedFolderId = NoteRepository.ROOT_FOLDER_ID
                 val openNote = notes.firstOrNull { it.id == selectedNoteId }
@@ -106,7 +245,7 @@ fun NotesScreen(
             },
             onRenameFolder = { renamingFolderId = it },
             onMoveNote = { movingNoteId = it },
-            onCreateNote = { selectedRef = NoteRef.Local(repository.addNote(folderId = selectedFolderId)) },
+            onCreateNote = { selectedRef = NoteRef.Local(repository.addNote(folderId = selectedLocalFolderId)) },
             onCreateFolder = { showNewFolderDialog = true },
             onReviewConflicts = { showConflicts = true },
             onShowSyncError = { showSyncError = true },
@@ -116,8 +255,37 @@ fun NotesScreen(
         VerticalDivider()
 
         NoteEditorPane(
-            document = selectedNote?.toDocument(),
-            onChange = { text -> selectedNote?.let { repository.updateNote(it.id, text) } },
+            document = selectedDocument,
+            onChange = { text ->
+                when (val ref = selectedRef) {
+                    is NoteRef.Local -> selectedNote?.let { repository.updateNote(it.id, text) }
+                    is NoteRef.GitHubIssue ->
+                        gitHubIssues
+                            .firstOrNull { it.repoId == ref.repoId && it.number == ref.number }
+                            ?.let { row ->
+                                // The title belongs to GitHub and is not edited here, so it travels
+                                // back unchanged; only the body is the user's typing.
+                                gitHubRepository.editIssue(
+                                    repoId = row.repoId,
+                                    number = row.number,
+                                    title = row.title,
+                                    body = text,
+                                )
+                            }
+
+                    null -> Unit
+                }
+            },
+            onToggleComplete =
+                (selectedRef as? NoteRef.GitHubIssue)?.let { ref ->
+                    {
+                        val currentlyClosed = selectedDocument?.completion == Completion.Closed
+                        runGitHub {
+                            gitHubRepository.setComplete(ref.repoId, ref.number, completed = !currentlyClosed)
+                            if (currentlyClosed) "Reopened the issue on GitHub" else "Closed the issue on GitHub"
+                        }
+                    }
+                },
         )
     }
 
@@ -128,8 +296,8 @@ fun NotesScreen(
             initialValue = "",
             onDismiss = { showNewFolderDialog = false },
             onConfirm = { name ->
-                repository.addFolder(name = name, parentId = selectedFolderId)
-                expanded = expanded + selectedFolderId
+                repository.addFolder(name = name, parentId = selectedLocalFolderId)
+                expanded = expanded + selectedLocalFolderId
                 showNewFolderDialog = false
             },
         )
@@ -183,4 +351,96 @@ fun NotesScreen(
             onDismiss = { showSyncError = false },
         )
     }
+
+    val linkable = linkableRepos
+    if (linkable != null) {
+        LinkRepoDialog(
+            repos = linkable,
+            loading = linkLoading,
+            error = linkError,
+            onSelect = { selected ->
+                linkableRepos = null
+                val owner =
+                    selected.repo.owner
+                        ?.login
+                        .orEmpty()
+                runGitHub {
+                    val repoId = gitHubRepository.linkRepo(owner, selected.repo.name, selected.installationId)
+                    // Expand the new folder so the first pull's results are visible.
+                    expanded = expanded + gitHubRepoNodeId(repoId)
+                    selectedFolderId = gitHubRepoNodeId(repoId)
+                    "Linked ${selected.label}"
+                }
+            },
+            onDismiss = { linkableRepos = null },
+        )
+    }
+
+    val forcePullId = forcePullTarget
+    if (forcePullId != null) {
+        val unsaved = gitHubIssues.count { it.repoId == forcePullId && it.dirty == 1L }
+        AlertDialog(
+            onDismissRequest = { forcePullTarget = null },
+            title = { Text("Force pull?") },
+            text = {
+                Text(
+                    if (unsaved == 0) {
+                        "This replaces the local copy of every issue with what is on GitHub."
+                    } else {
+                        "This replaces the local copy of every issue with what is on GitHub, and " +
+                            "discards $unsaved unsaved change(s) in this folder."
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    forcePullTarget = null
+                    runGitHub {
+                        val result = gitHubRepository.pull(forcePullId, force = true)
+                        "Force pulled ${result.pulled} issue(s), removed ${result.pruned}"
+                    }
+                }) {
+                    Text("Force pull")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { forcePullTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    val notice = gitHubNotice
+    if (notice != null) {
+        MessageDialog(
+            title = "GitHub",
+            message = notice,
+            onConfirm = { gitHubNotice = null },
+            onDismiss = { gitHubNotice = null },
+        )
+    }
+
+    val gitHubProblem = gitHubError
+    if (gitHubProblem != null) {
+        MessageDialog(
+            title = "GitHub",
+            message = gitHubProblem,
+            onConfirm = { gitHubError = null },
+            onDismiss = { gitHubError = null },
+        )
+    }
 }
+
+/** What a push did, in one sentence — including the part the user has to decide about. */
+private fun describePush(result: GitHubPushResult): String =
+    buildString {
+        append("Pushed ${result.pushed} issue(s)")
+        if (result.changedRemotely.isNotEmpty()) {
+            append(
+                ". ${result.changedRemotely.size} changed on GitHub since you pulled " +
+                    "(${result.changedRemotely.joinToString(", ") { "#$it" }}) and were left alone",
+            )
+        }
+        if (result.failed.isNotEmpty()) {
+            append(". ${result.failed.size} failed: ${result.failed.first().second}")
+        }
+    }

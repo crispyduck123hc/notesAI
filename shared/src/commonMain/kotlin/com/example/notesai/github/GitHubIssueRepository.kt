@@ -48,8 +48,11 @@ class GitHubIssueRepository(
     val linkedRepos: Flow<List<GitHubRepoEntity>> =
         queries.selectAllGitHubRepos().asFlow().mapToList(Dispatchers.Default)
 
-    fun issues(repoId: Long): Flow<List<GitHubIssueNoteEntity>> =
-        queries.selectGitHubIssues(repoId).asFlow().mapToList(Dispatchers.Default)
+    fun issues(repoId: Long): Flow<List<GitHubIssueNoteEntity>> = queries.selectGitHubIssues(repoId).asFlow().mapToList(Dispatchers.Default)
+
+    /** Every mirrored issue, across all linked repositories — what the tree renders. */
+    val allIssues: Flow<List<GitHubIssueNoteEntity>> =
+        queries.selectAllGitHubIssues().asFlow().mapToList(Dispatchers.Default)
 
     fun linkedRepo(repoId: Long): GitHubRepoEntity? = queries.selectGitHubRepoById(repoId).executeAsOneOrNull()
 

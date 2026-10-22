@@ -365,3 +365,7 @@ DELETE FROM GitHubIssueNoteEntity WHERE repoId = ? AND number = ?;
 
 deleteGitHubIssuesForRepo:
 DELETE FROM GitHubIssueNoteEntity WHERE repoId = ?;
+
+-- Every mirrored issue, across linked repositories, for the tree.
+selectAllGitHubIssues:
+SELECT * FROM GitHubIssueNoteEntity ORDER BY repoId, number;

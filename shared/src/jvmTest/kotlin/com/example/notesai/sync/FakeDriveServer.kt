@@ -136,8 +136,7 @@ class FakeDriveServer(
     private fun fileJson(
         id: String,
         file: Stored,
-    ): String =
-        """{"id":"$id","name":"${file.name}","version":${file.version},"headRevisionId":"rev-${file.version}","md5Checksum":"md5-${file.version}"}"""
+    ): String = """{"id":"$id","name":"${file.name}","version":${file.version},"headRevisionId":"rev-${file.version}","md5Checksum":"md5-${file.version}"}"""
 
     private fun respond(
         exchange: HttpExchange,

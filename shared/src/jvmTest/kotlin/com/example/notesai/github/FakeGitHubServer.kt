@@ -255,11 +255,9 @@ class FakeGitHubServer(
 
     private fun JsonObject.string(name: String): String = stringOrNull(name).orEmpty()
 
-    private fun JsonObject.stringOrNull(name: String): String? =
-        (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    private fun JsonObject.stringOrNull(name: String): String? = (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-    private fun kotlinx.serialization.json.JsonElement.jsonObjectOrEmpty(): JsonObject =
-        this as? JsonObject ?: JsonObject(emptyMap())
+    private fun kotlinx.serialization.json.JsonElement.jsonObjectOrEmpty(): JsonObject = this as? JsonObject ?: JsonObject(emptyMap())
 
     private fun respond(
         exchange: HttpExchange,
