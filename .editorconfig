@@ -14,6 +14,12 @@ max_line_length = 120
 # which ktlint's naming rule cannot know on its own.
 ktlint_function_naming_ignore_when_annotated_with = Composable
 
+# `max-line-length` is the one rule ktlint cannot auto-correct, and SQLDelight's generated code has a
+# declaration well past any limit we would set — so `ktlintFormat` hard-failed on output nobody wrote.
+# Formatting generated code is harmless, but failing on it is not, so the rule is off. Handwritten code
+# is written to fit anyway; nothing else measures it now.
+ktlint_standard_max-line-length = disabled
+
 # One public class per file is not how this codebase works: the platform `actual` implementations
 # share a file with the `expect` declaration they implement, so TokenStore.ios.kt holds
 # KeychainTokenStore. Renaming those would break the convention that pairs them.
@@ -25,12 +31,3 @@ ktlint_standard_filename = disabled
 # mean changing the Swift call site to match a lint rule.
 ktlint_standard_function-naming = disabled
 
-# Generated Kotlin — SQLDelight's interfaces, Compose's resource collectors, and the secret and
-# version constants the build writes — is not ours to format. The ktlint Gradle plugin's filters
-# reach its *check* tasks but not its *format* tasks, so `ktlintFormat` would otherwise try to
-# reformat generated code and fail on a line it cannot shorten. Rules are switched off for that
-# subtree rather than the files excluded, because scoping by path is all ktlint offers here.
-[**/build/generated/**/*.kt]
-ktlint_standard_indent = disabled
-ktlint_standard_import-ordering = disabled
-ktlint_standard_max-line-length = disabled

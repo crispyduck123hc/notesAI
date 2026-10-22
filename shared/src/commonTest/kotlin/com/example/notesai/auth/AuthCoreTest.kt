@@ -6,8 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AuthCoreTest {
-    private fun hex(bytes: ByteArray): String =
-        bytes.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
 
     // ---- SHA-256 (standard NIST vectors) ----------------------------------
 

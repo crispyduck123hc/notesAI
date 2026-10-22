@@ -16,6 +16,12 @@ complexity:
     ignoreAnnotated: ['Composable']
 
 style:
+  # Off for the same reason ktlint's `max-line-length` is off: generated code has a declaration no
+  # limit we would set can accommodate, and the two tools must agree. Otherwise `ktlintFormat` can
+  # produce code this rule then rejects — a loop with no way out but reformatting by hand.
+  MaxLineLength:
+    active: false
+
   # MagicNumber is off. It fired on `listOf(3, 4)` in a throwaway file, and this codebase is full of
   # legitimate literals — byte masks, SHA-256 round constants, timeout durations, port numbers. The
   # rule's value is catching an unexplained number in business logic; the cost here was a rule that

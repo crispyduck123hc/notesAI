@@ -1,11 +1,18 @@
 package com.example.notesai.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.FlowPreview
@@ -41,6 +49,8 @@ private const val WRITE_DEBOUNCE_MS = 300L
 internal fun NoteEditorPane(
     document: NoteDocument?,
     onChange: (String) -> Unit,
+    /** Null for local notes, which have no state to toggle. */
+    onToggleComplete: (() -> Unit)? = null,
 ) {
     if (document == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -72,17 +82,57 @@ internal fun NoteEditorPane(
         onDispose { onChange(textState.value) }
     }
 
-    OutlinedTextField(
-        value = textState.value,
-        onValueChange = { textState.value = it },
-        visualTransformation = TitleHeaderTransformation,
-        textStyle = MaterialTheme.typography.bodyLarge,
-        placeholder = { Text("First line becomes the title\u2026") },
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(Dimens.EditorPadding),
-    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // A GitHub issue has a title of its own, which is not the first line of its body, so it gets a
+        // header instead of the first-line styling below.
+        val completion = document.completion
+        if (completion != null) {
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = Dimens.EditorPadding, end = Dimens.Gutter, top = Dimens.Gutter),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = document.title.ifBlank { "(no title)" },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = if (completion == Completion.Closed) "Closed" else "Open",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (onToggleComplete != null) {
+                    Spacer(modifier = Modifier.width(Dimens.Gutter))
+                    TextButton(onClick = onToggleComplete) {
+                        Text(if (completion == Completion.Closed) "Reopen" else "Mark complete")
+                    }
+                }
+            }
+            HorizontalDivider()
+        }
+
+        OutlinedTextField(
+            value = textState.value,
+            onValueChange = { textState.value = it },
+            // The first line is a title only for local notes; an issue's body is just a body.
+            visualTransformation =
+                if (completion == null) TitleHeaderTransformation else VisualTransformation.None,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            placeholder = {
+                Text(if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026")
+            },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(Dimens.EditorPadding),
+        )
+    }
 }
 
 // Styles the first line of the field as a title header without changing any

@@ -33,5 +33,4 @@ private fun DriveFile.toEntry() = RemoteEntry(fileId = id, name = name.orEmpty()
  * Prefer Drive's monotonic `version`, falling back to a content hash so a backend that
  * omits `version` still yields a usable change token.
  */
-private fun DriveFile.versionToken(): String =
-    version?.toString() ?: headRevisionId ?: md5Checksum ?: modifiedTime.orEmpty()
+private fun DriveFile.versionToken(): String = version?.toString() ?: headRevisionId ?: md5Checksum ?: modifiedTime.orEmpty()

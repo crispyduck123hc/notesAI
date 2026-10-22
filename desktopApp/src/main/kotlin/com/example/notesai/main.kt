@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.example.notesai.auth.TokenSlot
 import com.example.notesai.auth.desktopTokenStore
 import com.example.notesai.db.DatabaseDriverFactory
 import kotlinx.coroutines.delay
@@ -57,6 +58,8 @@ private fun runApp() =
     application {
         val driverFactory = DatabaseDriverFactory()
         val tokenStore = desktopTokenStore()
+        // GitHub gets its own credential slot, so the two providers sign in and out independently.
+        val gitHubTokenStore = desktopTokenStore(TokenSlot.GITHUB)
         val exitFlush = remember { ExitFlush() }
         val scope = rememberCoroutineScope()
         var closing by remember { mutableStateOf(false) }
@@ -83,6 +86,7 @@ private fun runApp() =
             App(
                 driverFactory = driverFactory,
                 tokenStore = tokenStore,
+                gitHubTokenStore = gitHubTokenStore,
                 exitFlush = exitFlush,
             )
         }

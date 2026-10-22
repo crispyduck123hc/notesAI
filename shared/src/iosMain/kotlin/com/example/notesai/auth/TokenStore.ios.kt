@@ -120,5 +120,4 @@ class KeychainTokenStore(
     }
 }
 
-private fun cfString(value: String): CFStringRef? =
-    CFStringCreateWithCString(kCFAllocatorDefault, value, kCFStringEncodingUTF8)
+private fun cfString(value: String): CFStringRef? = CFStringCreateWithCString(kCFAllocatorDefault, value, kCFStringEncodingUTF8)

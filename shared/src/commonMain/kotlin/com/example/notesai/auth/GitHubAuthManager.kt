@@ -145,8 +145,7 @@ class GitHubAuthManager(
             scope = scope,
         )
 
-    private fun clientSecretParam(): List<Pair<String, String>> =
-        config.clientSecret?.takeIf { it.isNotBlank() }?.let { listOf("client_secret" to it) } ?: emptyList()
+    private fun clientSecretParam(): List<Pair<String, String>> = config.clientSecret?.takeIf { it.isNotBlank() }?.let { listOf("client_secret" to it) } ?: emptyList()
 
     private suspend fun requestToken(params: List<Pair<String, String>>): TokenResponse {
         val body =

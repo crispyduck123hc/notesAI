@@ -13,20 +13,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
- * Shows a sync failure in full.
+ * Shows a message in full, with copyable text.
  *
- * The copyable part matters: Google's own wording is what makes a failure searchable, and the
- * hint below it is often the whole fix. A cramped status line would truncate both.
+ * The copyable part matters for failures: the remote's own wording is what makes an error searchable,
+ * and the hint below it is often the whole fix. A cramped status line would truncate both.
  */
 @Composable
-internal fun SyncErrorDialog(
+internal fun MessageDialog(
+    title: String,
     message: String,
-    onRetry: () -> Unit,
+    confirmLabel: String = "Close",
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sync problem") },
+        title = { Text(title) },
         text = {
             SelectionContainer {
                 Text(
@@ -40,10 +42,26 @@ internal fun SyncErrorDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onRetry) { Text("Try again") }
+            TextButton(onClick = onConfirm) { Text(confirmLabel) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
         },
+    )
+}
+
+/** A sync failure, with the retry that makes its hint actionable. */
+@Composable
+internal fun SyncErrorDialog(
+    message: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MessageDialog(
+        title = "Sync problem",
+        message = message,
+        confirmLabel = "Try again",
+        onConfirm = onRetry,
+        onDismiss = onDismiss,
     )
 }

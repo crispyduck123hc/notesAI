@@ -26,8 +26,7 @@ class MetadataTokenStore(
     private val remove: (String) -> Unit,
     private val key: String = TOKENS_KEY,
 ) : TokenStore {
-    override fun load(): AuthTokens? =
-        read(key)?.let { runCatching { authJson.decodeFromString<AuthTokens>(it) }.getOrNull() }
+    override fun load(): AuthTokens? = read(key)?.let { runCatching { authJson.decodeFromString<AuthTokens>(it) }.getOrNull() }
 
     override fun save(tokens: AuthTokens) {
         write(key, authJson.encodeToString(tokens))
