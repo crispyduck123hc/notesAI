@@ -30,6 +30,8 @@ internal data class NoteTreeItem(
     val source: NoteSource = NoteSource.LOCAL,
     /** Secondary text shown on the row — an issue's state, for now. */
     val badge: String? = null,
+    /** True when an issue has local edits that have not been pushed. */
+    val unsaved: Boolean = false,
 )
 
 /**
@@ -143,6 +145,7 @@ private fun addGitHubRepos(
                     ref = NoteRef.GitHubIssue(repoId = repo.id, number = issue.number),
                     source = NoteSource.GITHUB,
                     badge = if (issue.state == "closed") "Closed" else "Open",
+                    unsaved = issue.dirty == 1L,
                 )
         }
     }

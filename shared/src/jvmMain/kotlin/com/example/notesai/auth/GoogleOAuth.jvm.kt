@@ -70,7 +70,7 @@ actual suspend fun authorizeInteractively(
     }
 }
 
-private fun openBrowser(url: String) {
+internal fun openBrowser(url: String) {
     runCatching {
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
             Desktop.getDesktop().browse(URI(url))

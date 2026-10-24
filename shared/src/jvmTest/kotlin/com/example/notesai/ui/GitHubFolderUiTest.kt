@@ -118,4 +118,72 @@ class GitHubFolderUiTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun aNewIssueCanBeCreatedFromTheFolder() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.linkedRepo()
+                setContent { fixture.Screen() }
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNodeWithText("octocat/notes").performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("New issue\u2026").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNodeWithText("New issue\u2026").performClick()
+
+                // The prompt's field is the only text field while the dialog is up.
+                onNode(hasSetTextAction()).performTextInput("from the app")
+                onNodeWithText("Create").performClick()
+
+                // It exists on GitHub...
+                waitUntil(timeoutMillis = 5_000) {
+                    fixture.server.storedByTitle("from the app") != null
+                }
+                // ...and opens in the editor, so the body can be written and pushed next.
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#1 from the app").fetchSemanticsNodes().isNotEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun anUnpushedEditIsMarkedInTheTree() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                val number = fixture.server.addIssue(title = "task", body = "body")
+                val repoId = fixture.linkedRepo()
+                setContent { fixture.Screen() }
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNodeWithText("octocat/notes").performClick()
+                onNode(hasText("\u25B8") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$number task").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                onNodeWithText("#$number task").performClick()
+                onNode(hasSetTextAction()).performClick()
+                onNode(hasSetTextAction()).performTextInput(" edited")
+
+                waitUntil(timeoutMillis = 5_000) {
+                    kotlinx.coroutines.runBlocking { fixture.gitHub.issue(repoId, number) }?.dirty == 1L
+                }
+                // The row marks it, so "why is this not on GitHub?" has an answer in the window.
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("\u2022").fetchSemanticsNodes().isNotEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
 }

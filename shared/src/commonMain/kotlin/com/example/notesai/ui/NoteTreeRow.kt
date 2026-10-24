@@ -83,6 +83,15 @@ internal fun NoteTreeRow(
                 modifier = Modifier.weight(1f),
             )
 
+            if (item.unsaved) {
+                Text(
+                    // A dot rather than a word: it has to fit next to the state badge in a narrow pane.
+                    text = "\u2022",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
             if (badge != null) {
                 Text(
                     text = badge,

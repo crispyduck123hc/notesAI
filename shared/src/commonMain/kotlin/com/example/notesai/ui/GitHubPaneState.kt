@@ -25,6 +25,8 @@ internal class GitHubPaneState(
     val onForcePull: (repoId: Long) -> Unit,
     val onPush: (repoId: Long) -> Unit,
     val onUnlink: (repoId: Long) -> Unit,
+    /** Asks for a title and creates the issue on GitHub. */
+    val onNewIssue: (repoId: Long) -> Unit,
     /** Closes or reopens an issue. Offered from the row menu and the editor. */
     val onToggleComplete: (repoId: Long, number: Long, completed: Boolean) -> Unit,
 )

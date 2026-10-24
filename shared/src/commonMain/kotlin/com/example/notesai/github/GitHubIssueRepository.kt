@@ -95,6 +95,33 @@ class GitHubIssueRepository(
         queries.deleteGitHubRepo(repoId)
     }
 
+    /**
+     * Creates an issue on GitHub and mirrors it.
+     *
+     * Not queued like an edit: the user asked for it explicitly, so it either exists on GitHub or it
+     * failed loudly. The mirror row is written from GitHub's response, so the number and timestamps are
+     * never guessed — the issue number is what identifies it locally from then on.
+     */
+    suspend fun createIssue(
+        repoId: Long,
+        title: String,
+        body: String,
+    ): GitHubIssueNoteEntity? {
+        val repo = queries.selectGitHubRepoById(repoId).executeAsOneOrNull() ?: return null
+        val created = client.createIssue(owner = repo.owner, repo = repo.name, title = title, body = body)
+        queries.insertGitHubIssue(
+            repoId = repoId,
+            number = created.number,
+            title = created.title,
+            body = created.body.orEmpty(),
+            state = created.state,
+            remoteUpdatedAt = created.updatedAt,
+            dirty = 0,
+            pulledAt = now(),
+        )
+        return queries.selectGitHubIssue(repoId, created.number).executeAsOneOrNull()
+    }
+
     // ---- Editing -----------------------------------------------------------
 
     /** Records a local edit. Nothing leaves the machine until [push]. */
