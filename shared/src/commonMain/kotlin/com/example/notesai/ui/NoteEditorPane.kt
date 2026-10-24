@@ -51,6 +51,8 @@ internal fun NoteEditorPane(
     onChange: (String) -> Unit,
     /** Null for local notes, which have no state to toggle. */
     onToggleComplete: (() -> Unit)? = null,
+    /** Null for local notes; issues can be handed to the browser. */
+    onOpenOnGitHub: (() -> Unit)? = null,
 ) {
     if (document == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -106,6 +108,10 @@ internal fun NoteEditorPane(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (onOpenOnGitHub != null) {
+                    Spacer(modifier = Modifier.width(Dimens.Gutter))
+                    TextButton(onClick = onOpenOnGitHub) { Text("Open on GitHub") }
+                }
                 if (onToggleComplete != null) {
                     Spacer(modifier = Modifier.width(Dimens.Gutter))
                     TextButton(onClick = onToggleComplete) {

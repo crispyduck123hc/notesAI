@@ -69,6 +69,7 @@ fun NotesScreen(
     var linkLoading by remember { mutableStateOf(false) }
     var linkError by remember { mutableStateOf<String?>(null) }
     var forcePullTarget by remember { mutableStateOf<Long?>(null) }
+    var newIssueRepo by remember { mutableStateOf<Long?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -218,6 +219,7 @@ fun NotesScreen(
                         gitHubRepository.unlinkRepo(repoId)
                         if (selectedRepo?.id == repoId) selectedRef = null
                     },
+                    onNewIssue = { repoId -> newIssueRepo = repoId },
                     onToggleComplete = { repoId, number, completed ->
                         runGitHub {
                             gitHubRepository.setComplete(repoId, number, completed)
@@ -276,6 +278,14 @@ fun NotesScreen(
                     null -> Unit
                 }
             },
+            onOpenOnGitHub =
+                (selectedRef as? NoteRef.GitHubIssue)?.let { ref ->
+                    gitHubRepos.firstOrNull { it.id == ref.repoId }?.let { repo ->
+                        {
+                            openInBrowser("https://github.com/${repo.owner}/${repo.name}/issues/${ref.number}")
+                        }
+                    }
+                },
             onToggleComplete =
                 (selectedRef as? NoteRef.GitHubIssue)?.let { ref ->
                     {
@@ -405,6 +415,30 @@ fun NotesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { forcePullTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    val newIssueRepoId = newIssueRepo
+    if (newIssueRepoId != null) {
+        TextPromptDialog(
+            title = "New issue",
+            fieldLabel = "Title",
+            confirmLabel = "Create",
+            onDismiss = { newIssueRepo = null },
+            onConfirm = { title ->
+                newIssueRepo = null
+                runGitHub {
+                    val created = gitHubRepository.createIssue(newIssueRepoId, title, body = "")
+                    if (created != null) {
+                        // Show it, expanded, so the body can be written straight away and pushed.
+                        expanded = expanded + gitHubRepoNodeId(newIssueRepoId)
+                        selectedRef = NoteRef.GitHubIssue(newIssueRepoId, created.number)
+                        "Created #${created.number} on GitHub"
+                    } else {
+                        null
+                    }
+                }
             },
         )
     }

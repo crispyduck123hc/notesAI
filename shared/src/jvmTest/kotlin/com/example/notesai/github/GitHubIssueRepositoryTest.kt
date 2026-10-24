@@ -207,4 +207,30 @@ class GitHubIssueRepositoryTest {
             assertTrue(fixture.rows().isEmpty(), "the mirror rows are deleted with the repo")
             assertEquals("keep me on github", fixture.server.stored(number)?.title, "GitHub is untouched")
         }
+
+    @Test
+    fun creatingAnIssueMirrorsGitHubSNumbersAndNotLocalOnes() =
+        withFixture { fixture ->
+            val created = fixture.repository.createIssue(fixture.repoId, title = "new issue", body = "")
+
+            assertEquals(1L, created?.number, "the number comes from GitHub, not a local counter")
+            assertEquals("open", created?.state)
+            assertEquals(0L, created?.dirty, "it exists on GitHub already, so it is not pending")
+            assertEquals("new issue", fixture.server.stored(1L)?.title)
+            assertEquals(listOf(1L), fixture.rows().map { it.number }, "and it is mirrored locally")
+        }
+
+    @Test
+    fun aLocalEditShowsAsUnsavedUntilItIsPushed() =
+        withFixture { fixture ->
+            val number = fixture.server.addIssue(title = "edit me", body = "body")
+            fixture.repository.pull(fixture.repoId, force = true)
+            assertEquals(0L, fixture.rows().single().dirty)
+
+            fixture.repository.editIssue(fixture.repoId, number, title = "edit me", body = "changed")
+            assertEquals(1L, fixture.rows().single().dirty)
+
+            fixture.repository.push(fixture.repoId)
+            assertEquals(0L, fixture.rows().single().dirty)
+        }
 }

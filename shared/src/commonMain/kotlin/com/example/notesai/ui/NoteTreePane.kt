@@ -250,12 +250,15 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         }
     }
     Row(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { gitHub.onNewIssue(repo.id) }, enabled = !gitHub.busy) {
+            Text("New issue\u2026")
+        }
+        Spacer(modifier = Modifier.width(4.dp))
         TextButton(onClick = { gitHub.onForcePull(repo.id) }, enabled = !gitHub.busy) {
             Text("Force pull\u2026")
         }
-        Spacer(modifier = Modifier.width(4.dp))
-        TextButton(onClick = { gitHub.onUnlink(repo.id) }, enabled = !gitHub.busy) {
-            Text("Unlink")
-        }
+    }
+    TextButton(onClick = { gitHub.onUnlink(repo.id) }, enabled = !gitHub.busy) {
+        Text("Unlink")
     }
 }
