@@ -26,6 +26,16 @@ android {
             .get()
             .toInt()
 
+    // Derived from `notesai.version`, so the code can never lag the name. Play requires every release
+    // to carry a higher code than the last, and MAJOR.MINOR.PATCH fits into 10_000 / 100 / 1 — room for
+    // 99 minors and 99 patches before the ceiling matters.
+    val appVersion = providers.gradleProperty("notesai.version").getOrElse("1.0.0")
+    val versionParts = appVersion.split(".", "-").map { it.toIntOrNull() ?: 0 }
+    val computedVersionCode =
+        versionParts.getOrElse(0) { 0 } * 10_000 +
+            versionParts.getOrElse(1) { 0 } * 100 +
+            versionParts.getOrElse(2) { 0 }
+
     defaultConfig {
         // Store identity. Deliberately not `com.example.*`: that prefix is unowned (Play
         // rejects it) and it gets baked into the Android OAuth client and the store listing.
@@ -38,9 +48,9 @@ android {
             libs.versions.android.targetSdk
                 .get()
                 .toInt()
-        versionCode = 1
+        versionCode = computedVersionCode
         // Same source of truth as the desktop installer name and the version the app displays.
-        versionName = providers.gradleProperty("notesai.version").getOrElse("1.0")
+        versionName = appVersion
     }
     packaging {
         resources {

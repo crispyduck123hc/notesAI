@@ -264,8 +264,16 @@ the bottom of the app's sidebar:
 notesai.version=1.0.0
 ```
 
-Bump that one line, then tag the commit `v<same version>`. Two constraints are worth knowing before
-you pick a number:
+Bump that one line, then tag the commit `v<same version>`. The release workflow **refuses to build
+when the two disagree**, because the installer is named from `notesai.version` and not from the tag —
+three early releases went out tagged `v1.0.1-beta.1` and `v1.1.0-beta` with every artifact inside them
+built as `1.0.0`. Pre-release suffixes belong to the tag only: `v1.1.0-beta.2` is built from
+`notesai.version=1.1.0`.
+
+Android's `versionCode` is derived from the same value — `MAJOR*10000 + MINOR*100 + PATCH`, so `1.1.0`
+becomes `10100` — which keeps it strictly increasing as the version moves, and impossible to forget.
+
+Two constraints are worth knowing before you pick a number:
 
 - **The major version cannot be zero.** The macOS installer bundler rejects `0.1.0` outright —
   "the first number in an app-version cannot be zero or negative" — and the Windows and Linux
