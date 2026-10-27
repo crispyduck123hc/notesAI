@@ -109,4 +109,38 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).assertTextEquals("two")
             assertTrue(writes.none { it.first == NoteRef.Local(2) }, "note two must not receive note one's text")
         }
+
+    @Test
+    fun theBulletButtonPrefixesTheLineTheCaretIsOn() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
+                    onChange = {},
+                )
+            }
+
+            // Put the caret at the start of the line, then use the toolbar.
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("\u2022 Bullet").performClick()
+
+            onNode(hasSetTextAction()).assertTextEquals("\u2022 shopping")
+        }
+
+    @Test
+    fun theBulletButtonToggles() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("\u2022 Bullet").performClick()
+            onNodeWithText("\u2022 Bullet").performClick()
+
+            onNode(hasSetTextAction()).assertTextEquals("shopping")
+        }
 }

@@ -25,6 +25,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,14 +65,15 @@ internal fun NoteEditorPane(
         return
     }
 
-    // Local state is the source of truth while editing; the DB write is the sink.
+    // Local state is the source of truth while editing; the DB write is the sink. It carries the
+    // selection too, because the bullet action has to put the caret after the marker it inserts.
     // Keyed on the document's identity so it re-initializes only when a different note is selected,
     // so the async Flow re-emission from our own write can't clobber what's typed.
-    val textState = remember(document.ref) { mutableStateOf(document.content) }
+    val textState = remember(document.ref) { mutableStateOf(TextFieldValue(document.content)) }
 
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
     LaunchedEffect(document.ref) {
-        snapshotFlow { textState.value }
+        snapshotFlow { textState.value.text }
             .drop(1) // ignore the value already persisted
             .debounce(WRITE_DEBOUNCE_MS)
             .collectLatest { onChange(it) }
@@ -81,7 +83,7 @@ internal fun NoteEditorPane(
     // and `onChange` are captured from the composition where this effect launched, so
     // the flush targets the note that was actually being edited.
     DisposableEffect(document.ref) {
-        onDispose { onChange(textState.value) }
+        onDispose { onChange(textState.value.text) }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -120,6 +122,17 @@ internal fun NoteEditorPane(
                 }
             }
             HorizontalDivider()
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = Dimens.EditorPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(
+                onClick = { textState.value = toggleBullet(textState.value) },
+            ) {
+                Text("\u2022 Bullet")
+            }
         }
 
         OutlinedTextField(
