@@ -84,4 +84,20 @@ class NotesScreenTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun theSidebarSaysWhoIsSignedIn() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                setContent { fixture.Screen() }
+
+                onNodeWithText("Signed in as").assertExists()
+                onNodeWithText("someone@example.com").assertExists()
+                // And the second provider's identity is stated separately, not merged into one line.
+                onNodeWithText("GitHub: octocat").assertExists()
+            } finally {
+                fixture.close()
+            }
+        }
 }

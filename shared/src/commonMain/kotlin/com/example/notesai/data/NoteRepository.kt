@@ -78,6 +78,17 @@ class NoteRepository(
         if (storedAccountScope() == null) putMetadata(ACCOUNT_SCOPE_KEY, scope)
     }
 
+    /**
+     * Rewrites the recorded scope.
+     *
+     * Only for the one case where the key legitimately changes: a database carried over from the era
+     * when the account's address could not be read. Rewriting it keeps the tripwire meaningful instead
+     * of loosening it, so a genuine account mismatch is still refused.
+     */
+    fun upgradeAccountScope(scope: String) {
+        putMetadata(ACCOUNT_SCOPE_KEY, scope)
+    }
+
     // ---- Folders ----------------------------------------------------------
 
     /**

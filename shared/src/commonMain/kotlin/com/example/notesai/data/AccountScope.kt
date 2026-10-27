@@ -34,3 +34,11 @@ fun accountDatabaseName(email: String?): String {
         }
     }
 }
+
+/**
+ * The name a database got while the account's address was unknown.
+ *
+ * Kept so an install from that era can be recognised: its database is this name, but the account now
+ * resolves to a real one. See [NoteRepository.upgradeAccountScope].
+ */
+val LEGACY_ACCOUNT_SCOPE: String = accountDatabaseName(null)

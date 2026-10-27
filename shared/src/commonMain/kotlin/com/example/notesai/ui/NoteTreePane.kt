@@ -17,7 +17,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -166,21 +165,25 @@ internal fun NoteTreePane(
         }
 
         HorizontalDivider()
-        Row(
+
+        // Who you are signed in as, spelled out. The address gets its own line rather than sharing one
+        // with the Sign out button, where a long address was being ellipsised away to nothing useful.
+        Text(
+            text = "Signed in as",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            // A sign-in saved before the address could be read has none stored — say what fixes it
+            // rather than looking like a bug.
+            text = accountEmail ?: "(sign in again to show your address)",
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = accountEmail ?: "Signed in",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onSignOut) {
-                Text("Sign out")
-            }
+        )
+        TextButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+            Text("Sign out")
         }
 
         // The build people are actually running, so a bug report can name it.

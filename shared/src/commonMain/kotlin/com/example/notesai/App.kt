@@ -20,6 +20,7 @@ import com.example.notesai.auth.GoogleAuthManager
 import com.example.notesai.auth.TokenStore
 import com.example.notesai.auth.defaultGitHubOAuthConfig
 import com.example.notesai.auth.defaultOAuthConfig
+import com.example.notesai.data.LEGACY_ACCOUNT_SCOPE
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.data.accountDatabaseName
 import com.example.notesai.db.DatabaseDriverFactory
@@ -180,7 +181,16 @@ private fun AccountNotes(
     val driver = remember(scopeName) { driverFactory.createDriver(scopeName) }
     val repository =
         remember(driver) {
-            NoteRepository(driver).also { it.recordAccountScope(scopeName) }
+            NoteRepository(driver).also { repository ->
+                when (repository.storedAccountScope()) {
+                    null -> repository.recordAccountScope(scopeName)
+                    // A database from before the account's address could be read: the file has been
+                    // renamed to this account's name, so adopt that name rather than pausing sync as
+                    // though it belonged to someone else.
+                    LEGACY_ACCOUNT_SCOPE -> repository.upgradeAccountScope(scopeName)
+                    else -> Unit
+                }
+            }
         }
 
     // Tripwire: the database is named after the account, so a mismatch means something is

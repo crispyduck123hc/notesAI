@@ -118,4 +118,22 @@ class AuthCoreTest {
         assertEquals(null, emailFromIdToken("not-a-jwt"))
         assertEquals(null, emailFromIdToken("header.@@@@.signature"))
     }
+
+    @Test
+    fun emailIsReadFromARealGoogleIdTokenPayload() {
+        // A real payload is not all-strings: it carries `exp` and `iat` as numbers and
+        // `email_verified` as a boolean.
+        val payload =
+            Base64.UrlSafe
+                .encode(
+                    (
+                        """{"iss":"https://accounts.google.com","azp":"123.apps.googleusercontent.com",""" +
+                            """"aud":"123.apps.googleusercontent.com","sub":"110933706359391692557",""" +
+                            """"email":"someone@gmail.com","email_verified":true,""" +
+                            """"at_hash":"abc123","iat":1735689600,"exp":1735693200}"""
+                    ).encodeToByteArray(),
+                ).trimEnd('=')
+
+        assertEquals("someone@gmail.com", emailFromIdToken("header.$payload.signature"))
+    }
 }
