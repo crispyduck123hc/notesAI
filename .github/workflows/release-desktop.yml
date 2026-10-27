@@ -34,6 +34,24 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # The installer is named from `notesai.version`, not from the tag. Three releases went out
+      # tagged v1.0.0-beta.1, v1.0.1-beta.1 and v1.1.0-beta while every artifact inside them was
+      # built as 1.0.0 — so the two are compared here, before spending three minutes on packaging.
+      - name: Check the tag matches the declared version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          declared=$(sed -n 's/^notesai\.version=//p' gradle.properties | tr -d '[:space:]')
+          # Strip the leading v and any pre-release suffix: v1.1.0-beta.2 -> 1.1.0
+          tagged=${GITHUB_REF_NAME#v}
+          tagged=${tagged%%-*}
+
+          if [ "$declared" != "$tagged" ]; then
+            echo "::error::gradle.properties declares notesai.version=$declared, but the tag is $GITHUB_REF_NAME. Installers are named from the declared version, so this would publish $declared artifacts under a $tagged tag. Update notesai.version, or retag."
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches notesai.version=$declared"
+
       # local.properties is git-ignored; the build compiles these into LocalSecrets. Empty
       # values still build, but a release should carry the real client ids.
       - name: Provide OAuth client ids
