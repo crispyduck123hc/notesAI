@@ -179,7 +179,9 @@ internal fun NoteTreePane(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = accountEmail ?: "(no email in the sign-in)",
+            // A sign-in saved before the address could be read has none stored — say what fixes it
+            // rather than looking like a bug.
+            text = accountEmail ?: "(sign in again to show your address)",
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
