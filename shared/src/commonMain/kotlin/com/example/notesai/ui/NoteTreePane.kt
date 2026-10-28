@@ -1,6 +1,7 @@
 package com.example.notesai.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
 import com.example.notesai.ui.theme.Dimens
+import com.example.notesai.update.AvailableUpdate
 import kotlinx.collections.immutable.ImmutableList
 
 /** Left pane: creation buttons, the flattened note tree, sync state and the account. */
@@ -35,6 +37,8 @@ internal fun NoteTreePane(
     hasSyncError: Boolean,
     syncing: Boolean,
     conflictCount: Int,
+    /** Non-null when a newer release has been published than the one running. */
+    availableUpdate: AvailableUpdate?,
     gitHub: GitHubPaneState,
     onToggle: (Long) -> Unit,
     onSelectFolder: (Long) -> Unit,
@@ -47,6 +51,7 @@ internal fun NoteTreePane(
     onCreateFolder: () -> Unit,
     onReviewConflicts: () -> Unit,
     onShowSyncError: () -> Unit,
+    onOpenUpdate: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -186,14 +191,39 @@ internal fun NoteTreePane(
             Text("Sign out")
         }
 
-        // The build people are actually running, so a bug report can name it.
-        Text(
-            text = "notesAI $APP_VERSION",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (availableUpdate != null) {
+            // Replaces the version line rather than sitting beside it: the useful fact when there is
+            // something to install is that something exists, and the build number is still named on
+            // the line below so a bug report can quote it.
+            TextButton(
+                onClick = onOpenUpdate,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = Dimens.Gutter, vertical = 0.dp),
+            ) {
+                Text(
+                    text = "Update available: ${availableUpdate.tag}",
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "you have $APP_VERSION",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            // The build people are actually running, so a bug report can name it.
+            Text(
+                text = "notesAI $APP_VERSION",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 

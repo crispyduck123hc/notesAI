@@ -8,6 +8,7 @@ import com.example.notesai.db.NotesDatabase
 import com.example.notesai.github.FakeGitHubServer
 import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
+import com.example.notesai.update.AvailableUpdate
 import io.ktor.client.HttpClient
 
 /**
@@ -39,6 +40,8 @@ internal class ScreenFixture {
     @Composable
     fun Screen(
         gitHubLogin: String? = "octocat",
+        availableUpdate: AvailableUpdate? = null,
+        onOpenUpdate: () -> Unit = {},
         onConnectGitHub: suspend () -> Unit = {},
         onSignOut: () -> Unit = {},
     ) {
@@ -51,6 +54,8 @@ internal class ScreenFixture {
             gitHubRepository = gitHub,
             gitHubClient = client,
             gitHubLogin = gitHubLogin,
+            availableUpdate = availableUpdate,
+            onOpenUpdate = onOpenUpdate,
             onConnectGitHub = onConnectGitHub,
             onRetrySync = {},
             onResolveConflict = { _, _ -> },

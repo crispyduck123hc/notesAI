@@ -20,6 +20,7 @@ import com.example.notesai.data.NoteRepository
 import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.github.GitHubPushResult
+import com.example.notesai.update.AvailableUpdate
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -30,7 +31,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * The GitHub folder is explicit: nothing happens to it until a button is pressed.
  */
 @Composable
-fun NotesScreen(
+internal fun NotesScreen(
     repository: NoteRepository,
     account: AccountInfo,
     syncStatus: String?,
@@ -40,6 +41,9 @@ fun NotesScreen(
     gitHubClient: GitHubClient,
     /** Null when GitHub is not connected. */
     gitHubLogin: String?,
+    /** Non-null when a newer release than the running one has been published. */
+    availableUpdate: AvailableUpdate? = null,
+    onOpenUpdate: () -> Unit = {},
     onConnectGitHub: suspend () -> Unit,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
@@ -48,8 +52,14 @@ fun NotesScreen(
     val folders by repository.allFolders.collectAsState(initial = emptyList())
     val notes by repository.allNotes.collectAsState(initial = emptyList())
     val conflicts by repository.conflicts.collectAsState(initial = emptyList())
-    val gitHubRepos by gitHubRepository.linkedRepos.collectAsState(initial = emptyList())
+    val linkedRepos by gitHubRepository.linkedRepos.collectAsState(initial = emptyList())
     val gitHubIssues by gitHubRepository.allIssues.collectAsState(initial = emptyList())
+
+    // Links survive a sign-out on purpose — they live in the database, so reconnecting does not mean
+    // re-linking every repository. But while nobody is signed in there is nothing that can be done
+    // with them, and an unclickable GitHub folder in the tree reads as a broken feature rather than a
+    // signed-out one. Hidden, not deleted: signing in again brings them straight back.
+    val gitHubRepos = if (gitHubLogin == null) emptyList() else linkedRepos
 
     var expanded by remember { mutableStateOf(setOf(NoteRepository.ROOT_FOLDER_ID)) }
     var selectedFolderId by remember { mutableStateOf(NoteRepository.ROOT_FOLDER_ID) }
@@ -158,6 +168,8 @@ fun NotesScreen(
             hasSyncError = syncError != null,
             syncing = syncing,
             conflictCount = conflictItems.size,
+            availableUpdate = availableUpdate,
+            onOpenUpdate = onOpenUpdate,
             gitHub =
                 GitHubPaneState(
                     login = gitHubLogin,
