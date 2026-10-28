@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>notesAI — notes that sync to your own Google Drive</title>
+    <meta
+      name="description"
+      content="A notes app for macOS, Windows and Linux that keeps your notes in a folder only it can see, in your own Google Drive."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfd;
+        --fg: #1d1d1f;
+        --muted: #6e6e73;
+        --card: #ffffff;
+        --line: #e3e3e8;
+        --accent: #0a84ff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e0e10;
+          --fg: #f5f5f7;
+          --muted: #98989d;
+          --card: #17171a;
+          --line: #2a2a2e;
+          --accent: #5ac8fa;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 3rem 1.25rem 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+          sans-serif;
+      }
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 2.25rem;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.25rem;
+      }
+      .tagline {
+        color: var(--muted);
+        margin: 0 0 2rem;
+      }
+      .version {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      ul.downloads {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 2rem;
+        display: grid;
+        gap: 0.625rem;
+      }
+      ul.downloads li a {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        padding: 0.9rem 1.1rem;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: inherit;
+        text-decoration: none;
+      }
+      ul.downloads li a:hover,
+      ul.downloads li a:focus-visible {
+        border-color: var(--accent);
+      }
+      ul.downloads .size {
+        color: var(--muted);
+        font-size: 0.875rem;
+        white-space: nowrap;
+      }
+      ul.downloads .pending {
+        color: var(--muted);
+      }
+      h2 {
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 2rem 0 0.75rem;
+      }
+      p,
+      li {
+        color: var(--fg);
+      }
+      ul.notes {
+        padding-left: 1.1rem;
+        color: var(--muted);
+      }
+      ul.notes li {
+        color: var(--muted);
+        margin-bottom: 0.4rem;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>notesAI</h1>
+      <p class="tagline">
+        Notes for macOS, Windows and Linux. They live in a hidden folder in your own Google Drive —
+        nothing passes through anyone else's server.
+      </p>
+
+      <ul class="downloads" id="downloads" aria-live="polite">
+        <li><span class="pending">Finding the latest release…</span></li>
+      </ul>
+      <p class="version" id="version"></p>
+
+      <h2>What you get</h2>
+      <ul class="notes">
+        <li>Folders, drag to move, and bullet notes that stay plain text.</li>
+        <li>Sync through your own Drive, with conflicts shown rather than silently overwritten.</li>
+        <li>Linux, Windows and macOS installers cut from the same source.</li>
+        <li>No account with us, no telemetry, no subscription.</li>
+      </ul>
+
+      <footer>
+        <a href="https://github.com/crispyduck123hc/notesAI">Source and release notes</a> ·
+        <a href="https://github.com/crispyduck123hc/notesAI/releases">All releases</a> ·
+        <a href="https://github.com/crispyduck123hc/notesAI/blob/main/PRIVACY_POLICY.md">Privacy</a>
+      </footer>
+    </main>
+
+    <script type="module">
+      // Nothing about a release needs editing here: the page asks GitHub what the newest release
+      // holds, so versions, filenames, sizes and download links follow on their own.
+      //
+      // Two details are worth knowing. /releases/latest is unusable while every release is a beta --
+      // it skips prereleases and answers 404 -- so the list is fetched and filtered instead. And a
+      // stable release wins even when a newer beta exists, because someone who is not following the
+      // project should get the version meant to be trusted rather than whatever shipped last.
+      const REPO = 'crispyduck123hc/notesAI'
+      const PLATFORMS = [
+        [/\.dmg$/i, 'macOS'],
+        [/\.msi$/i, 'Windows (64-bit)'],
+        [/\.deb$/i, 'Debian / Ubuntu (amd64)'],
+      ]
+
+      const list = document.getElementById('downloads')
+      const version = document.getElementById('version')
+
+      const isChecksums = (asset) => /SHA256/i.test(asset.name)
+      // A format nobody has taught the page about still gets published -- labelled with its own
+      // filename rather than silently dropped.
+      const platformName = (asset) =>
+        PLATFORMS.find(([pattern]) => pattern.test(asset.name))?.[1] ?? asset.name
+
+      const newestToShow = (releases) => {
+        const published = releases.filter((release) => !release.draft)
+        return published.find((release) => !release.prerelease) ?? published[0]
+      }
+
+      const fallback = () => {
+        const li = document.createElement('li')
+        const a = document.createElement('a')
+        a.href = `https://github.com/${REPO}/releases`
+        a.textContent = 'See the releases page for downloads'
+        li.append(a)
+        list.replaceChildren(li)
+      }
+
+      const row = (label, href) => {
+        const li = document.createElement('li')
+        const a = document.createElement('a')
+        a.href = href
+        const name = document.createElement('span')
+        name.textContent = label
+        a.append(name)
+        li.append(a)
+        return { li, a }
+      }
+
+      try {
+        const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=10`)
+        if (!response.ok) throw new Error(`GitHub answered ${response.status}`)
+
+        const release = newestToShow(await response.json())
+        if (!release) throw new Error('no published release yet')
+
+        const installers = release.assets.filter((asset) => !isChecksums(asset))
+        if (installers.length === 0) throw new Error('that release has no installers attached')
+
+        const rows = []
+        for (const asset of installers) {
+          const { li, a } = row(platformName(asset), asset.browser_download_url)
+          const size = document.createElement('span')
+          size.className = 'size'
+          size.textContent = `${Math.round(asset.size / 1048576)} MB`
+          a.append(size)
+          rows.push(li)
+        }
+
+        const checksums = release.assets.find(isChecksums)
+        if (checksums) rows.push(row('Checksums (SHA-256)', checksums.browser_download_url).li)
+
+        list.replaceChildren(...rows)
+
+        const notes = document.createElement('a')
+        notes.href = release.html_url
+        notes.textContent = 'Release notes'
+        version.replaceChildren(
+          document.createTextNode(
+            `${release.prerelease ? 'Latest beta' : 'Latest'}: ${release.tag_name} · `,
+          ),
+          notes,
+        )
+      } catch (error) {
+        // A landing page that cannot reach the API should still offer a way to the downloads.
+        console.warn('Release lookup failed:', error)
+        fallback()
+      }
+    </script>
+  </body>
+</html>

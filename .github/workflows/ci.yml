@@ -2,7 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: ['**']
+    # Every branch gets CI except the old Pages publishing branch. The site now deploys from site/ via
+    # pages.yml; this only matters if that branch lingers after being switched over.
+    branches-ignore: ['gh-pages']
   pull_request:
   workflow_dispatch:
 
@@ -42,6 +44,12 @@ jobs:
       # first; the baselines are meant to shrink.
       - name: Lint and analyse
         run: ./gradlew ktlintCheck detekt --console=plain
+
+      # The landing page in site/ decides its own download links at load time. Wrong logic there
+      # means a page full of dead buttons, which no Kotlin test would ever notice. Offline fixtures
+      # only, so this never depends on the GitHub API being reachable.
+      - name: Check the landing page
+        run: node scripts/verify-site.mjs
 
   shared-tests:
     name: Shared tests (JVM)
