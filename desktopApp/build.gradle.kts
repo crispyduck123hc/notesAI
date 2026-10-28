@@ -41,8 +41,14 @@ compose.desktop {
 
             // The Compose plugin uses jlink and does *not* infer required JDK modules. Leaving
             // one out produces a ClassNotFoundException only at runtime, in the packaged app —
-            // `run` uses the full JDK and hides it. The SQLite driver goes through JDBC.
-            modules("java.sql")
+            // `run` uses the full JDK and hides it.
+            //
+            // java.sql       — the SQLite driver, which goes through JDBC.
+            // jdk.httpserver — the sign-in loopback server (com.sun.net.httpserver.HttpServer) that
+            //                  receives the OAuth redirect. Signing in from the packaged build
+            //                  failed with NoClassDefFoundError: com/sun/net/httpserver/HttpServer
+            //                  until this was listed.
+            modules("java.sql", "jdk.httpserver")
 
             macOS {
                 bundleID = "io.github.crispyduck123hc.notesai"

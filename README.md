@@ -288,6 +288,41 @@ iOS is the one exception — Xcode takes its version from
 `iosApp/Configuration/Config.xcconfig` (`MARKETING_VERSION`), so mirror the value there. It is the
 only place that cannot read `gradle.properties`.
 
+### When a release turns out to be broken
+
+**Publish a new version. Do not delete or rebuild the old one.** Anyone who already downloaded it cannot
+tell that the bytes changed, `SHA256SUMS.txt` becomes a lie, and caches (GitHub's own CDN included) keep
+serving the old file anyway. The industrial norm is to *yank*: leave the artifact in place, mark it bad, and
+supersede it — Maven Central will not even let you replace a published artifact, and npm, PyPI, crates.io
+and RubyGems all prefer a yank to a delete.
+
+Concretely, for a broken release:
+
+1. **Annotate it** — edit the release notes, leave the assets alone:
+
+   ```bash
+   gh release edit v1.2.0-beta --notes "Sign-in is broken in this build (a required JDK module was
+   missing from the macOS app). Install v1.2.1-beta instead."
+   ```
+
+2. **Cut the fix as a new patch**, not a new suffix of the same version: `notesai.version=1.2.1`, tagged
+   `v1.2.1-beta`. The installer filenames come from the version, so re-using `1.2.0` under a `-beta.2` tag
+   would publish a *different* `notesAI-1.2.0.dmg` — same name, different checksum, which is the confusion
+   the version number exists to prevent.
+
+3. **Do not clear the way with an update check you do not have.** Until the app can tell someone a newer
+   version exists (see *Not implemented yet*), nobody still running the broken build learns about the fix
+   from a release page they will not revisit.
+
+Deleting is right in exactly three cases: the artifact carries a secret or malware (delete it, rotate the
+secret, and say so in the successor's notes), it infringes someone's rights, or it was published minutes ago
+and never shipped to anyone. Old-but-working releases should simply stay: they cost nothing to keep and are
+the only rollback path that exists.
+
+The pipeline already protects against the worst outcome by accident: `gh release create` fails when the tag
+already has a release, so re-running the workflow cannot silently overwrite published assets. Assets *can*
+be replaced by hand in the web UI — which is precisely what to never do.
+
 ---
 
 ## First launch on macOS
