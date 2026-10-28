@@ -361,6 +361,7 @@ gets its own database, so a different account shows a different, emptier set of 
 ## Project layout
 
 ```
+site/         the landing page published to GitHub Pages — static HTML, no build step
 shared/       Kotlin Multiplatform: UI, database, sync engine, OAuth, Drive client
   commonMain/          shared code and Compose UI
     sqldelight/        schema (.sq), migrations (.sqm) and version snapshots (databases/*.db)
@@ -381,6 +382,22 @@ Inside `shared/commonMain`, the interesting parts:
 | `data/NoteRepository.kt` | All database access; writes queue an outbox entry |
 | `auth/` | OAuth 2.0 authorization code + PKCE, token storage |
 | `ui/` | One file per composable |
+
+### The website
+
+`site/` is the page at <https://crispyduck123hc.github.io/notesAI/>, published by
+`.github/workflows/pages.yml` only when files under `site/` change on `main`.
+
+It needs no editing to announce a release: the page asks the GitHub API for the newest release and
+builds its download buttons from whatever installers that release carries, preferring a stable release
+over a newer beta. Edit it when the *story* changes — features, caveats, links, design — not when a
+version moves. `node scripts/verify-site.mjs` runs the page's own script against fixtures to prove the
+links still work (CI runs it on every push).
+
+Two repository settings make it work: **Settings → Pages → Source: GitHub Actions**, and
+**Settings → Environments → `github-pages` → Deployment branches** allowing `main`. A deployment from a
+branch the environment does not allow is refused with *"Branch "main" is not allowed to deploy to
+github-pages due to environment protection rules"*.
 
 ---
 

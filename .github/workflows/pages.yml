@@ -1,0 +1,57 @@
+name: Pages
+
+# Publishes site/ to https://crispyduck123hc.github.io/notesAI/.
+#
+# This replaces the branch-based publishing that used to run on *every* push to main: GitHub compiled
+# the README into a site and recorded a deployment each time. Now the site is a folder in the repository
+# and a deployment happens only when that folder changes.
+#
+# Requires the repository's Pages source to be "GitHub Actions" (Settings -> Pages). Until it is, the
+# configure-pages step fails with "Pages site not found", which is the expected error rather than a bug.
+on:
+  push:
+    branches: [main]
+    paths: ['site/**']
+  workflow_dispatch:
+
+# deploy-pages needs exactly these: `pages: write` to publish, `id-token: write` to prove the artifact
+# came from this workflow. `contents: read` is only enough for the checkout.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and never cancel one in flight: interrupting a deploy can leave the site
+# pointing at an artifact that has already been replaced.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publish the landing page
+    runs-on: ubuntu-latest
+    # The environment is what carries the deployment branch rule, so a workflow deploying from a branch
+    # the environment does not allow is refused before it runs.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Reads the Pages configuration into outputs and fails loudly if Pages is not switched to
+      # "GitHub Actions" yet, rather than letting the deploy step fail with something vaguer.
+      - name: Set up Pages
+        uses: actions/configure-pages@v5
+
+      # The site is static, so there is no build step: the folder is packaged as-is. Jekyll is not run,
+      # which is also why site/.nojekyll is harmless here (it only matters for branch-based publishing).
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
