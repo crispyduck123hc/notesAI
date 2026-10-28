@@ -31,7 +31,10 @@ import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.NotesScreen
+import com.example.notesai.ui.openInBrowser
 import com.example.notesai.ui.theme.NotesAiTheme
+import com.example.notesai.update.AvailableUpdate
+import com.example.notesai.update.UpdateChecker
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -203,6 +206,15 @@ private fun AccountNotes(
         }
     val gitHubRepository = remember(driver, gitHubClient) { GitHubIssueRepository(driver, gitHubClient) }
 
+    // One request per launch, and nothing is installed automatically: the result becomes a line in
+    // the sidebar and a link to the release page. Deliberately not tied to the account — whether a
+    // newer build exists is a property of the app, not of whose notes are open.
+    val updateChecker = remember(http) { UpdateChecker(http = http) }
+    var availableUpdate by remember { mutableStateOf<AvailableUpdate?>(null) }
+    LaunchedEffect(updateChecker) {
+        availableUpdate = updateChecker.availableUpdate()
+    }
+
     val drive = remember(http, accessToken) { DriveClient(http, accessToken) }
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
     val scope = rememberCoroutineScope()
@@ -270,6 +282,13 @@ private fun AccountNotes(
         gitHubRepository = gitHubRepository,
         gitHubClient = gitHubClient,
         gitHubLogin = gitHubLogin,
+        availableUpdate = availableUpdate,
+        onOpenUpdate = {
+            // The release page, where the install instructions live. Opening a browser is the one
+            // action that does nothing on mobile — the message is still useful there, the click is
+            // not, which is the same trade-off the GitHub links already make.
+            availableUpdate?.let { openInBrowser(it.releaseUrl) }
+        },
         onConnectGitHub = onConnectGitHub,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->

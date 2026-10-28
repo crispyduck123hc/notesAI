@@ -8,8 +8,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.example.notesai.APP_VERSION
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.update.AvailableUpdate
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -96,6 +99,90 @@ class NotesScreenTest {
                 onNodeWithText("someone@example.com").assertExists()
                 // And the second provider's identity is stated separately, not merged into one line.
                 onNodeWithText("GitHub: octocat").assertExists()
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun signingOutHidesTheGitHubFolder() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                // Signed in: the linked repository is part of the tree.
+                setContent { fixture.Screen(gitHubLogin = "octocat") }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun theGitHubFolderIsAbsentWhileSignedOut() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                // The link stays in the database across a sign-out, which is what made the folder
+                // appear to someone who was not signed in: it is data, not session state.
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen(gitHubLogin = null) }
+
+                // The offer to connect is the signed-out affordance; the folder must not be there.
+                onNodeWithText("Connect GitHub\u2026").assertExists()
+                assertTrue(
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isEmpty(),
+                    "a linked repository must not be listed while signed out",
+                )
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun theSidebarOffersTheNewerVersionInsteadOfTheCurrentOne() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                var opened = 0
+                setContent {
+                    fixture.Screen(
+                        availableUpdate =
+                            AvailableUpdate(
+                                tag = "v1.2.1",
+                                releaseUrl = "https://github.com/crispyduck123hc/notesAI/releases/tag/v1.2.1",
+                            ),
+                        onOpenUpdate = { opened++ },
+                    )
+                }
+
+                onNodeWithText("Update available: v1.2.1").assertExists()
+                // The running build is still named, so a bug report can quote it.
+                onNodeWithText("you have ${APP_VERSION}").assertExists()
+
+                onNodeWithText("Update available: v1.2.1").performClick()
+                assertEquals(1, opened)
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun withNothingToInstallTheSidebarJustShowsTheVersion() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                setContent { fixture.Screen(availableUpdate = null) }
+
+                onNodeWithText("notesAI ${APP_VERSION}").assertExists()
+                assertTrue(
+                    onAllNodesWithText("Update available: v1.2.1").fetchSemanticsNodes().isEmpty(),
+                    "no update prompt when there is no update",
+                )
             } finally {
                 fixture.close()
             }
