@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.editor
 
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue

@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.model
 
 import com.example.notesai.db.FolderEntity
 import com.example.notesai.db.GitHubIssueNoteEntity

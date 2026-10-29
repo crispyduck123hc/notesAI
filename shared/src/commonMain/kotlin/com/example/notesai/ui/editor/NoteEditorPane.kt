@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.editor
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +30,8 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
+import com.example.notesai.model.Completion
+import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
