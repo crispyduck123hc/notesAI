@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.tree
 
 import com.example.notesai.db.GitHubRepoEntity
 

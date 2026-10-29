@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.tree
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
+import com.example.notesai.model.NoteRef
+import com.example.notesai.model.NoteSource
+import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.ui.theme.Dimens
 import com.example.notesai.update.AvailableUpdate
 import kotlinx.collections.immutable.ImmutableList

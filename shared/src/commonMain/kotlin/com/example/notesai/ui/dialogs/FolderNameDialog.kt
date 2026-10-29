@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.dialogs
 
 import androidx.compose.runtime.Composable
 

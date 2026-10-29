@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.model
 
 import com.example.notesai.db.NoteEntity
 import kotlin.test.Test

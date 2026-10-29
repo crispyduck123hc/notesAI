@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.tree
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +25,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
+import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.ui.theme.Dimens
 
 /**

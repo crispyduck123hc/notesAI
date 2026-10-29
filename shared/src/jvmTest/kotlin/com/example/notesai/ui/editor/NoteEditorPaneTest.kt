@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.ui.editor
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.example.notesai.model.NoteDocument
+import com.example.notesai.model.NoteRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

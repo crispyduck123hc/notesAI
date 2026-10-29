@@ -1,4 +1,4 @@
-package com.example.notesai.ui
+package com.example.notesai.model
 
 import androidx.compose.runtime.Immutable
 import com.example.notesai.db.FolderEntity
