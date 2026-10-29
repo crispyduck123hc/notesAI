@@ -25,26 +25,43 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
-import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.ui.theme.Dimens
 
 /**
- * One row of the tree: an indentation-guide chevron (folders only), the label, a delete
- * affordance, and a secondary-click menu carrying the row's operations.
+ * The chevron on a row that expands, along with what pressing it does.
+ *
+ * One value instead of an `expanded` flag plus a nullable callback, so a chevron cannot be drawn
+ * without something to do, or a toggle offered without a chevron to press.
+ */
+internal data class TreeChevron(
+    val expanded: Boolean,
+    val onToggle: () -> Unit,
+)
+
+/**
+ * One row of the tree: an indentation-guide chevron (expandable rows only), the label, an optional
+ * delete affordance, and a secondary-click menu carrying the row's operations.
+ *
+ * Deliberately knows nothing about what kind of row it is drawing — the pane decides which of these
+ * it is allowed to pass. That keeps the rule "only local rows can be deleted" in one place instead of
+ * spread through the renderer.
  */
 @Composable
 internal fun NoteTreeRow(
-    item: NoteTreeItem,
+    label: String,
+    depth: Int,
     selected: Boolean,
-    onToggle: () -> Unit,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
-    onRename: (() -> Unit)?,
-    onMove: (() -> Unit)?,
-    deletable: Boolean,
+    /** Null for rows that do not expand. */
+    chevron: TreeChevron? = null,
     /** Small secondary label, e.g. an issue's state. */
     badge: String? = null,
-    /** Offered for GitHub issues only: closes or reopens the issue on GitHub. */
+    /** A dot marking local edits that have not been pushed. */
+    unsaved: Boolean = false,
+    /** Null when this row cannot be deleted — the presence of the action is the permission. */
+    onDelete: (() -> Unit)? = null,
+    onRename: (() -> Unit)? = null,
+    onMove: (() -> Unit)? = null,
     onComplete: (() -> Unit)? = null,
     completeLabel: String? = null,
 ) {
@@ -64,27 +81,27 @@ internal fun NoteTreeRow(
                         },
                     ).clickable(onClick = onClick)
                     .onSecondaryClick { menuOpen = true }
-                    .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * item.depth),
+                    .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * depth),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(modifier = Modifier.width(Dimens.TreeChevronWidth), contentAlignment = Alignment.Center) {
-                if (item.isFolder && item.expandable) {
+                if (chevron != null) {
                     Text(
-                        text = if (item.expanded) "\u25BE" else "\u25B8",
-                        modifier = Modifier.clickable(onClick = onToggle),
+                        text = if (chevron.expanded) "\u25BE" else "\u25B8",
+                        modifier = Modifier.clickable(onClick = chevron.onToggle),
                     )
                 }
             }
 
             Text(
-                text = item.label,
+                text = label,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
 
-            if (item.unsaved) {
+            if (unsaved) {
                 Text(
                     // A dot rather than a word: it has to fit next to the state badge in a narrow pane.
                     text = "\u2022",
@@ -101,7 +118,7 @@ internal fun NoteTreeRow(
                 )
             }
 
-            if (deletable) {
+            if (onDelete != null) {
                 TextButton(onClick = onDelete) {
                     Text("\u2715")
                 }
@@ -120,28 +137,19 @@ internal fun NoteTreeRow(
             }
             onMove?.let { move ->
                 DropdownMenuItem(
-                    text = { Text("Move to\u2026") },
+                    text = { Text("Move to…") },
                     onClick = {
                         menuOpen = false
                         move()
                     },
                 )
             }
-            if (onComplete != null && completeLabel != null) {
+            onComplete?.let { complete ->
                 DropdownMenuItem(
-                    text = { Text(completeLabel) },
+                    text = { Text(completeLabel ?: "Toggle") },
                     onClick = {
                         menuOpen = false
-                        onComplete()
-                    },
-                )
-            }
-            if (deletable) {
-                DropdownMenuItem(
-                    text = { Text("Delete") },
-                    onClick = {
-                        menuOpen = false
-                        onDelete()
+                        complete()
                     },
                 )
             }

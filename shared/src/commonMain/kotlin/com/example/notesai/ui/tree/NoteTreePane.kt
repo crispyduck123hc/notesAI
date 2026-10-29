@@ -23,7 +23,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
 import com.example.notesai.model.NoteRef
-import com.example.notesai.model.NoteSource
 import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.ui.theme.Dimens
 import com.example.notesai.update.AvailableUpdate
@@ -45,7 +44,8 @@ internal fun NoteTreePane(
     gitHub: GitHubPaneState,
     onToggle: (Long) -> Unit,
     onSelectFolder: (Long) -> Unit,
-    onSelectNote: (NoteTreeItem) -> Unit,
+    onSelectNote: (NoteTreeItem.Note) -> Unit,
+    onSelectIssue: (NoteTreeItem.Issue) -> Unit,
     onDeleteFolder: (Long) -> Unit,
     onDeleteNote: (Long) -> Unit,
     onRenameFolder: (Long) -> Unit,
@@ -77,45 +77,58 @@ internal fun NoteTreePane(
         Spacer(modifier = Modifier.height(Dimens.Gutter))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
-            // Keyed on the ref for note rows: several GitHub issue rows share the unused local id 0,
-            // and duplicate keys would confuse the list.
-            items(tree, key = { it.ref?.toString() ?: "f${it.id}" }) { item ->
-                val gitHubIssue = item.ref as? NoteRef.GitHubIssue
-                val localRef = item.ref as? NoteRef.Local
-                val isLocalRow = item.source == NoteSource.LOCAL
+            // The key comes from the row itself, so the rule lives beside the ids it protects rather
+            // than here — several GitHub issue rows would otherwise share one id.
+            items(tree, key = { it.key }) { item ->
+                // One branch per kind, and no branch has to ask whether a row is really what it says:
+                // the type is the answer. Adding a kind fails to compile here, which is the point.
+                when (item) {
+                    is NoteTreeItem.Folder ->
+                        NoteTreeRow(
+                            label = item.label,
+                            depth = item.depth,
+                            selected = item.id == selectedFolderId,
+                            chevron = chevronFor(item, onToggle),
+                            onClick = { onSelectFolder(item.id) },
+                            // The root is the anchor for everything else, so it cannot be deleted —
+                            // but naming it is still the user's business.
+                            onDelete = if (item.isRoot) null else ({ onDeleteFolder(item.id) }),
+                            onRename = ({ onRenameFolder(item.id) }),
+                        )
 
-                NoteTreeRow(
-                    item = item,
-                    selected =
-                        if (item.isFolder) {
-                            item.id == selectedFolderId
-                        } else {
-                            item.ref == selectedRef
-                        },
-                    onToggle = { onToggle(item.id) },
-                    onClick = { if (item.isFolder) onSelectFolder(item.id) else onSelectNote(item) },
-                    onDelete = {
-                        when {
-                            item.isFolder -> onDeleteFolder(item.id)
-                            localRef != null -> onDeleteNote(localRef.id)
-                        }
-                    },
-                    onRename = if (item.isFolder && isLocalRow) ({ onRenameFolder(item.id) }) else null,
-                    onMove = if (localRef != null) ({ onMoveNote(localRef.id) }) else null,
-                    // A linked repository is unlinked from its action row, not deleted like a folder.
-                    deletable = isLocalRow && !(item.isFolder && item.depth == 0),
-                    badge = item.badge,
-                    onComplete =
-                        gitHubIssue?.let { issue ->
-                            ({ gitHub.onToggleComplete(issue.repoId, issue.number, item.badge != "Closed") })
-                        },
-                    completeLabel =
-                        if (gitHubIssue != null) {
-                            if (item.badge == "Closed") "Reopen" else "Mark complete"
-                        } else {
-                            null
-                        },
-                )
+                    is NoteTreeItem.Repository ->
+                        NoteTreeRow(
+                            label = item.label,
+                            depth = item.depth,
+                            selected = item.nodeId == selectedFolderId,
+                            chevron = chevronFor(item, onToggle),
+                            onClick = { onSelectFolder(item.nodeId) },
+                            // A repository is unlinked from its action row, never deleted like a folder.
+                        )
+
+                    is NoteTreeItem.Note ->
+                        NoteTreeRow(
+                            label = item.label,
+                            depth = item.depth,
+                            selected = selectedRef == item.ref,
+                            onClick = { onSelectNote(item) },
+                            onDelete = ({ onDeleteNote(item.id) }),
+                            onMove = ({ onMoveNote(item.id) }),
+                        )
+
+                    is NoteTreeItem.Issue ->
+                        NoteTreeRow(
+                            label = item.label,
+                            depth = item.depth,
+                            selected = selectedRef == item.ref,
+                            onClick = { onSelectIssue(item) },
+                            badge = item.badge,
+                            unsaved = item.unsaved,
+                            // No delete: an issue is closed on GitHub, never removed from here.
+                            onComplete = ({ gitHub.onToggleComplete(item.repoId, item.number, !item.isClosed) }),
+                            completeLabel = if (item.isClosed) "Reopen" else "Mark complete",
+                        )
+                }
             }
         }
 
@@ -298,3 +311,23 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         Text("Unlink")
     }
 }
+
+/**
+ * A chevron for rows that expand, and nothing for rows that do not.
+ *
+ * The toggle id differs by kind — a folder's own id, a repository's synthetic node id — so each
+ * branch supplies it rather than the row having to know.
+ */
+private fun chevronFor(
+    item: NoteTreeItem,
+    onToggle: (Long) -> Unit,
+): TreeChevron? =
+    when (item) {
+        is NoteTreeItem.Folder ->
+            if (item.expandable) TreeChevron(item.expanded) { onToggle(item.id) } else null
+
+        is NoteTreeItem.Repository ->
+            if (item.expandable) TreeChevron(item.expanded) { onToggle(item.nodeId) } else null
+
+        is NoteTreeItem.Note, is NoteTreeItem.Issue -> null
+    }
