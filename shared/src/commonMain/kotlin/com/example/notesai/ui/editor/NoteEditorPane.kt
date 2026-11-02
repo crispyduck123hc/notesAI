@@ -21,15 +21,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.theme.Dimens
@@ -139,13 +137,13 @@ internal fun NoteEditorPane(
 
         OutlinedTextField(
             value = textState.value,
-            // Typing "\* " makes a bullet, Enter continues one, and Enter on an empty bullet ends the
-            // list. Done as part of the value change rather than as key events, so a soft keyboard on
-            // Android behaves the same as a hardware Return here.
-            onValueChange = { textState.value = applyBulletTyping(textState.value, it) },
-            // The first line is a title only for local notes; an issue's body is just a body.
-            visualTransformation =
-                if (completion == null) TitleHeaderTransformation else VisualTransformation.None,
+            // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
+            // and deleting the space after a bullet ends it too. Done as part of the value change rather
+            // than as key events, so a soft keyboard on Android behaves the same as a hardware Return.
+            onValueChange = { textState.value = applyEditorTyping(textState.value, it) },
+            // The first line is a title only for local notes; an issue's body is just a body. Tabs are
+            // drawn at a real width in both cases.
+            visualTransformation = EditorTransformation(titleStyle = if (completion == null) TitleStyle else null),
             textStyle = MaterialTheme.typography.bodyLarge,
             placeholder = {
                 Text(if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026")
@@ -154,27 +152,14 @@ internal fun NoteEditorPane(
                 Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(Dimens.EditorPadding),
+                    .padding(Dimens.EditorPadding)
+                    // Tab indents instead of moving focus. The field would otherwise let the key travel
+                    // to the focus manager, which is why an indent was impossible to type.
+                    .onPreviewKeyEvent { event ->
+                        val indents = event.key == Key.Tab && event.type == KeyEventType.KeyDown
+                        if (indents) textState.value = indentAtCaret(textState.value)
+                        indents
+                    },
         )
     }
 }
-
-// Styles the first line of the field as a title header without changing any
-// characters, so OffsetMapping.Identity stays valid.
-private val TitleHeaderTransformation =
-    VisualTransformation { text ->
-        val newlineIndex = text.text.indexOf('\n')
-        val firstLineEnd = if (newlineIndex == -1) text.text.length else newlineIndex
-
-        val styled =
-            buildAnnotatedString {
-                append(text.text)
-                addStyle(
-                    SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold),
-                    start = 0,
-                    end = firstLineEnd,
-                )
-            }
-
-        TransformedText(styled, OffsetMapping.Identity)
-    }

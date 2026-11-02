@@ -7,13 +7,22 @@ import androidx.compose.ui.text.input.TextFieldValue
 const val BULLET_MARKER = "\u2022 "
 
 /**
- * The indent a created bullet gets.
+ * One step of indentation, as a real tab.
  *
- * Bullets sit one step in from the text they belong to, which is also what gives the tree of nested
- * bullets something to nest *within*. It is a string rather than a width because the note is plain
- * text: whatever this is, it is what gets written. Empty it to have bullets flush with the margin.
+ * A tab rather than spaces because that is what the Tab key produces and what a plain-text note should
+ * contain, and because the editor draws it at a fixed width ([TAB_COLUMNS]) instead of the narrow space
+ * Compose gives a `\t` by default. Change it to `"  "` to indent with spaces instead.
  */
-const val BULLET_INDENT = "  "
+const val INDENT_UNIT = "\t"
+
+/**
+ * The indent a created bullet gets: one [INDENT_UNIT].
+ *
+ * Bullets sit one step in from the text they belong to, which is also what gives a tree of nested
+ * bullets something to nest *within*. It is a string rather than a width because the note is plain
+ * text: whatever this is, it is what gets written.
+ */
+const val BULLET_INDENT = INDENT_UNIT
 
 /**
  * What you can type to get a list marker, and what it becomes.
@@ -94,12 +103,64 @@ fun promoteListShortcut(
 
 /**
  * Everything the editor does to a value change in one place: the `*` shortcut, Return continuing a
- * bullet, and Return on an empty bullet ending the list.
+ * bullet, Return on an empty bullet ending the list, and deleting a bullet's space ending it as well.
  */
-fun applyBulletTyping(
+fun applyEditorTyping(
     previous: TextFieldValue,
     current: TextFieldValue,
-): TextFieldValue = promoteListShortcut(previous, current) ?: continueBullets(previous, current)
+): TextFieldValue =
+    promoteListShortcut(previous, current)
+        ?: endListOnMarkerSpaceDeletion(previous, current)
+        ?: continueBullets(previous, current)
+
+/**
+ * Inserts one [INDENT_UNIT] at the caret, replacing any selection — what Tab does.
+ *
+ * The selection is replaced rather than merely collapsed, so indenting a whole line works by selecting
+ * it first, which is what people expect from an indent key.
+ */
+fun indentAtCaret(value: TextFieldValue): TextFieldValue {
+    val text = value.text
+    val start = value.selection.min.coerceIn(0, text.length)
+    val end = value.selection.max.coerceIn(0, text.length)
+    return value.copy(
+        text = text.substring(0, start) + INDENT_UNIT + text.substring(end),
+        selection = TextRange(start + INDENT_UNIT.length),
+        composition = null,
+    )
+}
+
+/**
+ * Ends the list when the space after its marker is deleted.
+ *
+ * Deleting that one space is how you say "this was never a list item" in every Markdown editor that has
+ * the shortcut in the first place: `* ` becomes a list because of the space, so removing the space takes
+ * the list away. Here the marker is also stripped, so `"  • milk"` with the space deleted becomes
+ * `"milk"` rather than a line with a bullet glued to its first word.
+ *
+ * Returns null when the edit was not that deletion.
+ */
+@Suppress("ReturnCount") // as above: each "not this case" is a sentence
+fun endListOnMarkerSpaceDeletion(
+    previous: TextFieldValue,
+    current: TextFieldValue,
+): TextFieldValue? {
+    val deletedAt = singleDeletionAt(previous, current) ?: return null
+    val text = current.text
+    val lineStart = lineStartOf(text, deletedAt)
+    val markerStart = firstNonSpaceOf(text, lineStart)
+
+    // After the deletion the line starts with indent + the bullet glyph, with no space after it.
+    if (!text.startsWith(BULLET_MARKER.trimEnd(), markerStart)) return null
+    if (deletedAt != markerStart + BULLET_MARKER.trimEnd().length) return null
+
+    val markerEnd = markerStart + BULLET_MARKER.trimEnd().length
+    return current.copy(
+        text = text.removeRange(lineStart, markerEnd),
+        selection = TextRange(lineStart),
+        composition = null,
+    )
+}
 
 /**
  * Continues a bullet when Enter is pressed, and ends the list when the bullet is empty.
@@ -177,6 +238,28 @@ private fun singleInsertionAt(
             current.text.take(caret) == previous.text.take(caret) &&
             current.text.drop(caret + 1) == previous.text.drop(caret)
     return caret.takeIf { insertedOneCharacterAtTheCaret }
+}
+
+/**
+ * Where a single character was deleted, or null if this was any other edit.
+ *
+ * [deletedAt] is the index in the *new* text where the deleted character used to be, so a backspace and
+ * a forward delete both report the same place.
+ */
+private fun singleDeletionAt(
+    previous: TextFieldValue,
+    current: TextFieldValue,
+): Int? {
+    val caret = previous.selection.start
+    val deletedOneCharacterAtTheCaret =
+        previous.composition == null &&
+            current.composition == null &&
+            previous.selection.collapsed &&
+            caret in 1..previous.text.length &&
+            current.text.length == previous.text.length - 1 &&
+            current.text.take(caret - 1) == previous.text.take(caret - 1) &&
+            current.text.drop(caret - 1) == previous.text.drop(caret)
+    return (caret - 1).takeIf { deletedOneCharacterAtTheCaret }
 }
 
 private fun lineStartOf(

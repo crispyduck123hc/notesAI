@@ -285,4 +285,92 @@ class BulletPointsTest {
 
         assertEquals(fromToolbar.text, fromShortcut.text, "one marker, one indent, however it was asked for")
     }
+
+    // ---- Tab, and deleting a bullet's space ------------------------------------------------------
+
+    @Test
+    fun tabInsertsOneIndentUnitAtTheCaret() {
+        val result = indentAtCaret(value("milk", caret = 0))
+
+        assertEquals(INDENT_UNIT + "milk", result.text)
+        assertEquals(INDENT_UNIT.length, result.selection.start, "the caret follows the tab")
+    }
+
+    @Test
+    fun tabReplacesASelection() {
+        val result = indentAtCaret(value("milk", caret = 0).copy(selection = TextRange(0, 4)))
+
+        assertEquals(INDENT_UNIT, result.text)
+        assertEquals(INDENT_UNIT.length, result.selection.start)
+    }
+
+    @Test
+    fun theIndentUnitIsATab() {
+        assertEquals("\t", INDENT_UNIT, "a note is plain text: the indent is a tab, not spaces")
+        assertEquals(INDENT_UNIT, BULLET_INDENT, "the bullet and the Tab key indent by the same thing")
+    }
+
+    /** Backspace (or Delete) removing one character, as the field would report it. */
+    private fun deleted(
+        text: String,
+        index: Int,
+    ): Pair<TextFieldValue, TextFieldValue> {
+        val before = value(text, caret = index + 1)
+        val after = before.copy(text = text.removeRange(index, index + 1), selection = TextRange(index))
+        return before to after
+    }
+
+    @Test
+    fun deletingTheSpaceAfterABulletEndsTheList() {
+        // "  • milk" with the space after the bullet removed, leaving "  •milk".
+        val (before, after) = deleted(INDENT_UNIT + "\u2022 milk", index = INDENT_UNIT.length + 1)
+
+        val result = endListOnMarkerSpaceDeletion(before, after)
+
+        assertEquals("milk", result?.text, "the marker and its indent go, the text stays")
+        assertEquals(0, result?.selection?.start)
+    }
+
+    @Test
+    fun deletingTheSpaceRightAfterTheBulletGlyphIsWhatCounts() {
+        // Deleting a different space in the line is just editing.
+        val (before, after) = deleted("\u2022 two words", index = 5)
+
+        assertNull(endListOnMarkerSpaceDeletion(before, after))
+    }
+
+    @Test
+    fun deletingASpaceOnAPlainLineDoesNothingSpecial() {
+        val (before, after) = deleted("two words", index = 3)
+
+        assertNull(endListOnMarkerSpaceDeletion(before, after))
+    }
+
+    @Test
+    fun deletingTheSpaceFromAnEmptyBulletLeavesAnEmptyLine() {
+        val (before, after) = deleted("\u2022 ", index = 1)
+
+        assertEquals("", endListOnMarkerSpaceDeletion(before, after)?.text)
+    }
+
+    @Test
+    fun pastingIsNotDeletion() {
+        val before = value("\u2022 milk", caret = 7)
+        val pasted = before.copy(text = "\u2022 mil", selection = TextRange(6))
+
+        assertNull(endListOnMarkerSpaceDeletion(before, pasted))
+    }
+
+    @Test
+    fun thePipelineHandlesBothDirections() {
+        // The entry point the editor uses: typing the shortcut, and deleting the space again.
+        val (starBefore, starAfter) = typed("*", ' ')
+        val promoted = applyEditorTyping(starBefore, starAfter)
+        assertEquals(BULLET_INDENT + BULLET_MARKER, promoted.text)
+
+        val withText = promoted.copy(text = promoted.text + "milk", selection = TextRange(promoted.text.length + 4))
+        val (before, after) = deleted(withText.text, index = BULLET_INDENT.length + BULLET_MARKER.trimEnd().length)
+
+        assertEquals("milk", applyEditorTyping(before, after).text)
+    }
 }
