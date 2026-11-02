@@ -3,58 +3,6 @@ package com.example.notesai.ui.editor
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 
-/** The marker a bulleted line starts with. */
-const val BULLET_MARKER = "\u2022 "
-
-/** The marker a dashed line starts with. The hyphen-and-space that Markdown uses. */
-const val DASH_MARKER = "- "
-
-/**
- * A kind of list this editor understands.
- *
- * Two today — a bullet and a dash — and the rules are deliberately identical for both; the only difference is the
- * character written at the start of the line. [marker] includes the trailing space, because the space is what
- * makes it a list rather than a stray character: typing `-` alone stays a hyphen, and deleting the space after it
- * ends the list again.
- */
-enum class ListKind(
-    val marker: String,
-) {
-    BULLET(BULLET_MARKER),
-    DASH(DASH_MARKER),
-    ;
-
-    /** Just the visible part, for the case where the space after it has been deleted. */
-    val glyph: String get() = marker.trimEnd()
-
-    companion object {
-        /** The list whose full marker starts at [index], if any. */
-        fun at(
-            text: String,
-            index: Int,
-        ): ListKind? = entries.firstOrNull { text.startsWith(it.marker, index) }
-
-        /** The list whose glyph starts at [index] — the state left behind by deleting the space. */
-        fun glyphAt(
-            text: String,
-            index: Int,
-        ): ListKind? = entries.firstOrNull { text.startsWith(it.glyph, index) }
-    }
-}
-
-/**
- * What you can type to get a list marker, and what it becomes.
- *
- * `*` and `-` followed by a space, at the start of a line: the shortcuts every Markdown editor has (and the ones
- * WordPress, Joplin, Notion and Dabble also implement). Indenting by hand still works, because the typed key is
- * matched against the text between the line's indent and the caret.
- */
-private val LIST_SHORTCUTS: List<Pair<String, ListKind>> =
-    listOf(
-        "*" to ListKind.BULLET,
-        "-" to ListKind.DASH,
-    )
-
 /**
  * The indent a created list item gets: one [INDENT_UNIT].
  *
@@ -69,7 +17,7 @@ const val BULLET_INDENT = INDENT_UNIT
  *
  * * Same kind already there → the marker goes, along with its indent, so toggling is symmetric.
  * * A different kind there → it is **replaced**, which is how every editor that has list buttons behaves: pressing
- *   "dash list" on a bulleted line converts it rather than stacking a second marker.
+ *   "numbered list" on a bulleted line converts it rather than stacking a second marker.
  * * Nothing there → the marker arrives with [BULLET_INDENT].
  *
  * Markers are characters, not structure — a note is a string, and it syncs as a string — so this only edits
@@ -86,10 +34,10 @@ fun toggleList(
     val caret = value.selection.start.coerceIn(0, text.length)
     val lineStart = lineStartOf(text, caret)
     val markerStart = firstNonSpaceOf(text, lineStart)
-    val existing = ListKind.at(text, markerStart)
+    val existing = parseMarker(text, markerStart)
 
-    if (existing == kind) {
-        val markerEnd = markerStart + kind.marker.length
+    if (existing?.kind == kind) {
+        val markerEnd = markerStart + existing.text.length
         val removed = markerEnd - lineStart
         return value.copy(
             text = text.removeRange(lineStart, markerEnd),
@@ -100,9 +48,9 @@ fun toggleList(
 
     if (existing != null) {
         // A conversion: swap the marker, keep the text and the caret's distance from it.
-        val markerEnd = markerStart + existing.marker.length
-        val replacement = kind.marker
-        val shift = replacement.length - existing.marker.length
+        val markerEnd = markerStart + existing.text.length
+        val replacement = ListKind.openingMarker(kind)
+        val shift = replacement.length - existing.text.length
         val caretAfter = (caret + shift).coerceAtLeast(markerEnd + shift)
         return value.copy(
             text = text.substring(0, markerStart) + replacement + text.substring(markerEnd),
@@ -112,7 +60,7 @@ fun toggleList(
     }
 
     val indent = text.substring(lineStart, markerStart).ifEmpty { BULLET_INDENT }
-    val inserted = indent + kind.marker
+    val inserted = indent + ListKind.openingMarker(kind)
     return value.copy(
         text = text.substring(0, lineStart) + inserted + text.substring(lineStart),
         selection = TextRange(caret + inserted.length),
@@ -121,7 +69,7 @@ fun toggleList(
 }
 
 /**
- * Turns a typed shortcut into a list marker: `*` or `-` plus a space at the start of a line.
+ * Turns a typed shortcut into a list marker: `*`, `-` or a number and dot, plus a space, at the start of a line.
  *
  * Returns null when the edit was not a space typed directly after a shortcut, so the caller can fall through to its
  * other handling. The check is deliberately narrow — one character inserted, at the caret, with nothing but the
@@ -137,11 +85,13 @@ fun promoteListShortcut(
     val lineStart = lineStartOf(text, caret)
     val markerStart = firstNonSpaceOf(text, lineStart)
     val typed = text.substring(markerStart, caret)
-    val kind = LIST_SHORTCUTS.firstOrNull { (key, _) -> key == typed }?.second ?: return null
+    val kind = typedListShortcut(typed) ?: return null
 
     // An indent the user typed is kept; otherwise the item brings its own.
     val indent = text.substring(lineStart, markerStart).ifEmpty { BULLET_INDENT }
-    val replacement = indent + kind.marker
+    // A numbered list keeps the number that was typed: "7. " stays "7. " rather than snapping to 1.
+    val marker = if (kind == ListKind.NUMBERED) "$typed " else ListKind.openingMarker(kind)
+    val replacement = indent + marker
     return previous.copy(
         text = text.substring(0, lineStart) + replacement + text.substring(caret),
         selection = TextRange(lineStart + replacement.length),
@@ -150,8 +100,8 @@ fun promoteListShortcut(
 }
 
 /**
- * Everything the editor does to a value change in one place: the `*`/`-` shortcuts, Return continuing a list,
- * Return on an empty item ending it, and deleting an item's space ending it as well.
+ * Everything the editor does to a value change in one place: the shortcuts, Return continuing a list, Return on an
+ * empty item ending it, and deleting an item's space ending it as well.
  */
 fun applyEditorTyping(
     previous: TextFieldValue,
@@ -165,10 +115,10 @@ fun applyEditorTyping(
  * Continues a list item when Enter is pressed, and ends the list when the item is empty.
  *
  * The behaviour every editor that has lists converges on — Discourse, VS Code's Markdown mode, CodeMirror, Tiptap,
- * ProseMirror — is two rules: a non-empty item grows a sibling with the **same marker** and indentation, and an
- * empty item stops being an item. That second rule is what stops a list from being a trap you have to delete your
- * way out of. Which marker continues is read from the line, so a dash list keeps producing dashes and a bullet
- * list bullets — no list silently changes its character halfway down.
+ * ProseMirror, Markdown All in One — is two rules: a non-empty item grows a sibling with the **same marker** and
+ * indentation, and an empty item stops being an item. A numbered list's marker is one higher, which every editor
+ * that supports ordered lists also does. That second rule is what stops a list from being a trap you have to delete
+ * your way out of.
  *
  * This works from the *change* rather than from a key event, so it behaves the same for a hardware Return, a soft
  * keyboard on Android and an IME candidate: the test is whether the edit inserted exactly one newline at the caret.
@@ -184,8 +134,8 @@ fun continueList(
     val text = previous.text
     val lineStart = lineStartOf(text, caret)
     val markerStart = firstNonSpaceOf(text, lineStart)
-    val kind = ListKind.at(text, markerStart) ?: return current
-    val markerEnd = markerStart + kind.marker.length
+    val marker = parseMarker(text, markerStart) ?: return current
+    val markerEnd = markerStart + marker.text.length
 
     // A caret inside the marker is a request to split the line before it, not to make one.
     if (caret < markerEnd) return current
@@ -203,12 +153,14 @@ fun continueList(
         )
     }
 
-    // Otherwise the item continues, keeping whatever indentation and marker the line had.
-    val prefix = text.substring(lineStart, markerEnd)
-    val continued = current.text.substring(0, caret + 1) + prefix + current.text.substring(caret + 1)
+    // Otherwise the item continues, keeping the indentation and carrying the marker forward — one higher for a
+    // numbered list, identical for the others.
+    val indent = text.substring(lineStart, markerStart)
+    val next = indent + marker.next()
+    val continued = current.text.substring(0, caret + 1) + next + current.text.substring(caret + 1)
     return current.copy(
         text = continued,
-        selection = TextRange(caret + 1 + prefix.length),
+        selection = TextRange(caret + 1 + next.length),
         composition = null,
     )
 }
@@ -217,9 +169,10 @@ fun continueList(
  * Ends the list when the space after its marker is deleted.
  *
  * Deleting that one space is how you say "this was never a list item" in the editors that have the shortcut in the
- * first place: `- ` becomes a list because of the space, so removing the space takes the list away. Here the marker
- * is also stripped, so `"\t- milk"` with the space deleted becomes `"milk"` rather than a line with a hyphen glued
- * to its first word.
+ * first place: `- ` becomes a list because of the space, so removing the space takes the list away. The same is
+ * expected of numbers — the Word and Gutenberg support threads are full of people reporting it as a bug when
+ * backspace between "2." and the text fails to strip the numbering. Here the marker is also stripped, so
+ * `"\t1. milk"` with the space deleted becomes `"milk"` rather than a line starting with a stray `1.`.
  *
  * Returns null when the edit was not that deletion.
  */
@@ -233,11 +186,12 @@ fun endListOnMarkerSpaceDeletion(
     val lineStart = lineStartOf(text, deletedAt)
     val markerStart = firstNonSpaceOf(text, lineStart)
 
-    // After the deletion the line starts with indent + the glyph, with no space after it.
-    val kind = ListKind.glyphAt(text, markerStart) ?: return null
-    if (deletedAt != markerStart + kind.glyph.length) return null
+    // Read the marker from the text *before* the deletion, where it still has its space: that is what makes
+    // "1.milk" (a list whose space was removed) distinguishable from "1.5 kg" (a number).
+    val marker = parseMarker(previous.text, markerStart) ?: return null
+    if (deletedAt != markerStart + marker.glyph.length) return null
 
-    val markerEnd = markerStart + kind.glyph.length
+    val markerEnd = markerStart + marker.glyph.length
     return current.copy(
         text = text.removeRange(lineStart, markerEnd),
         selection = TextRange(lineStart),
@@ -272,8 +226,8 @@ private fun singleInsertionAt(
 /**
  * Where a single character was deleted, or null if this was any other edit.
  *
- * [returned index][Int] is the position in the *new* text where the deleted character used to be, so a backspace
- * and a forward delete both report the same place.
+ * The returned index is the position in the *new* text where the deleted character used to be, so a backspace and
+ * a forward delete both report the same place.
  */
 private fun singleDeletionAt(
     previous: TextFieldValue,

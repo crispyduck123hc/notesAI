@@ -441,4 +441,107 @@ class ListEditingTest {
 
         assertEquals("milk", applyEditorTyping(before, after).text)
     }
+
+    // ---- Numbered lists: same rules, a marker that carries a count -------------------------------
+
+    private val newNumbered = BULLET_INDENT + NUMBERED_MARKER
+
+    @Test
+    fun theNumberedButtonStartsAtOne() {
+        val result = toggleList(kind = ListKind.NUMBERED, value = value("milk", caret = 4))
+
+        assertEquals(newNumbered + "milk", result.text)
+        assertEquals(newNumbered.length + 4, result.selection.start)
+    }
+
+    @Test
+    fun theNumberedButtonTogglesItsOwnMarkerOff() {
+        val once = toggleList(kind = ListKind.NUMBERED, value = value("milk", caret = 4))
+
+        assertEquals("milk", toggleList(kind = ListKind.NUMBERED, value = once).text)
+    }
+
+    @Test
+    fun pressingNumberedOnABulletLineConvertsIt() {
+        val result = toggleList(kind = ListKind.NUMBERED, value = value(BULLET_MARKER + "milk", caret = 7))
+
+        assertEquals(NUMBERED_MARKER + "milk", result.text)
+    }
+
+    @Test
+    fun enterOnANumberedItemAdvancesTheNumber() {
+        assertEquals("1. milk\n2. ", enterResult("1. milk").text)
+        assertEquals("9. milk\n10. ", enterResult("9. milk").text, "ten follows nine, not one")
+        assertEquals("99. milk\n100. ", enterResult("99. milk").text)
+    }
+
+    @Test
+    fun enterOnAnEmptyNumberedItemEndsTheList() {
+        assertEquals("", enterResult("1. ").text)
+        assertEquals("", enterResult("7. ").text, "whatever number it had")
+    }
+
+    @Test
+    fun indentedNumberedItemsKeepTheirIndent() {
+        assertEquals("\t1. milk\n\t2. ", enterResult("\t1. milk").text)
+    }
+
+    @Test
+    fun deletingTheSpaceAfterANumberEndsTheList() {
+        // "1. milk" with the space removed leaves "1.milk"; the numbering goes too.
+        val (before, after) = deleted(INDENT_UNIT + NUMBERED_MARKER + "milk", index = INDENT_UNIT.length + 2)
+
+        val result = endListOnMarkerSpaceDeletion(before, after)
+
+        assertEquals("milk", result?.text)
+        assertEquals(0, result?.selection?.start)
+    }
+
+    @Test
+    fun aNumberThenSpaceAtTheStartOfALineMakesANumberedList() {
+        assertEquals(newNumbered, shortcutResult("1.")?.text)
+    }
+
+    @Test
+    fun aNumberAlreadyTypedIsKeptRatherThanResetToOne() {
+        // "7." was deliberate; snapping it to 1 would undo the user's own numbering.
+        assertEquals(BULLET_INDENT + "7. ", shortcutResult("7.")?.text)
+        assertEquals(BULLET_INDENT + "12. ", shortcutResult("12.")?.text)
+    }
+
+    @Test
+    fun aDecimalIsNotANumberedList() {
+        // "1.5 kg" must not become a list item, which is why the marker needs the dot *and* a space.
+        val (before, after) = typed("1.5", ' ', caret = 3)
+
+        assertNull(promoteListShortcut(before, after), "no digit-dot-space at the line start")
+        assertEquals("1.5 kg\n", enterResult("1.5 kg").text, "and Enter on that line is just a newline")
+    }
+
+    @Test
+    fun aNumberWithADotFurtherAlongTheLineIsNotAMarker() {
+        val (before, after) = deleted("see item 1. now", index = "see item 1".length)
+
+        assertNull(endListOnMarkerSpaceDeletion(before, after), "not at the start of the line")
+    }
+
+    @Test
+    fun theNumberedPipelineWorksEndToEnd() {
+        // Typed as a number *and a dot*, then the space that makes it a list.
+        val (numberBefore, numberAfter) = typed("1.", ' ')
+        val promoted = applyEditorTyping(numberBefore, numberAfter)
+        assertEquals(newNumbered, promoted.text)
+
+        val withText = promoted.copy(text = promoted.text + "milk", selection = TextRange(promoted.text.length + 4))
+        val continued = applyEditorTyping(withText, withText.copy(text = withText.text + "\n", selection = TextRange(withText.text.length + 1)))
+
+        assertEquals(newNumbered + "milk\n" + BULLET_INDENT + "2. ", continued.text)
+    }
+
+    @Test
+    fun theKindsDoNotBorrowEachOthersMarkers() {
+        // A dash list keeps producing dashes even when the item text mentions numbers, and vice versa.
+        assertEquals("- 1. milk\n- ", enterResult("- 1. milk").text)
+        assertEquals("1. - milk\n2. ", enterResult("1. - milk").text)
+    }
 }

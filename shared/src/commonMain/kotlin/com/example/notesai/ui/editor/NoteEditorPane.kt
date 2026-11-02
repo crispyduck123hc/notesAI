@@ -139,6 +139,11 @@ internal fun NoteEditorPane(
             ) {
                 Text("${DASH_MARKER.trimEnd()} Dash list")
             }
+            TextButton(
+                onClick = { textState.value = toggleList(textState.value, ListKind.NUMBERED) },
+            ) {
+                Text("${NUMBERED_MARKER.trimEnd()} Numbered list")
+            }
         }
 
         OutlinedTextField(
