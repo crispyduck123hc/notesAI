@@ -82,4 +82,39 @@ class EditorTransformationTest {
     fun withoutAStyleNothingIsStyled() {
         assertTrue(transform("Title\nbody").text.spanStyles.isEmpty())
     }
+
+    @Test
+    fun aChecklistItemIsDrawnAsACircle() {
+        // The note keeps "[ ]" — greppable, syncs unchanged, editable anywhere — and the field shows a circle.
+        assertEquals("\u25CB milk", transform(CHECKLIST_OPEN + "milk").text.text)
+        assertEquals("\u25C9 milk", transform(CHECKLIST_DONE + "milk").text.text)
+    }
+
+    @Test
+    fun anIndentedChecklistIsStillDrawn() {
+        assertEquals("    \u25CB milk", transform("\t" + CHECKLIST_OPEN + "milk").text.text)
+    }
+
+    @Test
+    fun bracketsInProseAreLeftAlone() {
+        // Only the start of a line is a marker.
+        assertEquals("write [ ] down", transform("write [ ] down").text.text)
+    }
+
+    @Test
+    fun theCaretMapsOverADrawnChecklist() {
+        val text = CHECKLIST_OPEN + "milk"
+        val result = transform(text)
+
+        // Every character of "[ ] " sits on the drawn circle, and the text after it lands where it is drawn.
+        for (offset in 0 until CHECKLIST_OPEN.length) {
+            assertEquals(0, result.offsetMapping.originalToTransformed(offset), "offset $offset")
+        }
+        assertEquals(
+            2,
+            result.offsetMapping.originalToTransformed(CHECKLIST_OPEN.length),
+            "the character right after the marker is drawn after the circle and its space",
+        )
+        assertEquals(CHECKLIST_OPEN.length, result.offsetMapping.transformedToOriginal(2))
+    }
 }

@@ -418,4 +418,74 @@ class NoteEditorPaneTest {
 
             onNode(hasSetTextAction()).assertTextEquals(drawn(NUMBERED_MARKER + "step\n" + "2. "))
         }
+
+    @Test
+    fun theChecklistButtonMakesAnItemInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("Checklist", substring = true).performClick()
+
+            // The indent is drawn as columns and the marker as a circle.
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT) + "○ milk")
+        }
+
+    @Test
+    fun tickingInTheRealFieldTurnsTheCircleIntoTickedText() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("Tick item", substring = true).performClick()
+
+            // The note holds "[x] milk"; the field draws a filled circle in front of it.
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk"))
+        }
+
+    @Test
+    fun enterInTheRealFieldContinuesAChecklist() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_DONE + "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk\n\u25CB "))
+        }
+
+    @Test
+    fun ctrlEnterTicksTheItemInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput {
+                keyDown(Key.CtrlLeft)
+                pressKey(Key.Enter)
+                keyUp(Key.CtrlLeft)
+            }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk"))
+        }
 }

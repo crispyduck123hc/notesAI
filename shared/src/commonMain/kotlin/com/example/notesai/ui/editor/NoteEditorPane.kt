@@ -1,7 +1,9 @@
 package com.example.notesai.ui.editor
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -125,9 +128,10 @@ internal fun NoteEditorPane(
             HorizontalDivider()
         }
 
-        Row(
+        // Wraps rather than clipping: there are five list buttons now, and the pane is 280dp wide on a phone.
+        FlowRow(
             modifier = Modifier.fillMaxWidth().padding(start = Dimens.EditorPadding),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.Center,
         ) {
             TextButton(
                 onClick = { textState.value = toggleList(textState.value, ListKind.BULLET) },
@@ -143,6 +147,18 @@ internal fun NoteEditorPane(
                 onClick = { textState.value = toggleList(textState.value, ListKind.NUMBERED) },
             ) {
                 Text("${NUMBERED_MARKER.trimEnd()} Numbered list")
+            }
+            TextButton(
+                onClick = { textState.value = toggleList(textState.value, ListKind.CHECKLIST) },
+            ) {
+                Text("\u25CB Checklist")
+            }
+            TextButton(
+                // Apple ticks by tapping the circle; a plain text field cannot tell which character was tapped, so
+                // the tick is an action on the caret's line — here and on Ctrl+Enter below.
+                onClick = { textState.value = toggleChecklistState(textState.value) },
+            ) {
+                Text("\u2713 Tick item")
             }
         }
 
@@ -176,8 +192,14 @@ internal fun NoteEditorPane(
                                 } else {
                                     indentAtCaret(textState.value)
                                 }
+                            return@onPreviewKeyEvent true
                         }
-                        indentKey
+                        // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
+                            textState.value = toggleChecklistState(textState.value)
+                            return@onPreviewKeyEvent true
+                        }
+                        false
                     },
         )
     }
