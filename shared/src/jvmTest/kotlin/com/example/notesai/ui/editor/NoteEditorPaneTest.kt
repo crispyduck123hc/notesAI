@@ -28,6 +28,12 @@ import kotlin.test.assertTrue
  */
 @OptIn(ExperimentalTestApi::class)
 class NoteEditorPaneTest {
+    /**
+     * What the field *draws*, which is what its semantics report: a tab is one character in the note but
+     * [TAB_COLUMNS] columns on screen. The characters themselves are asserted in `BulletPointsTest`.
+     */
+    private fun drawn(text: String): String = text.replace("\t", " ".repeat(TAB_COLUMNS))
+
     @Test
     fun aDocumentIsShownInTheField() =
         runComposeUiTest {
@@ -38,7 +44,7 @@ class NoteEditorPaneTest {
                 )
             }
 
-            onNode(hasSetTextAction()).assertTextEquals("first line\nbody")
+            onNode(hasSetTextAction()).assertTextEquals(drawn("first line\nbody"))
         }
 
     @Test
@@ -111,7 +117,7 @@ class NoteEditorPaneTest {
                 writes,
                 "the pending text must be flushed to the note it was typed into",
             )
-            onNode(hasSetTextAction()).assertTextEquals("two")
+            onNode(hasSetTextAction()).assertTextEquals(drawn("two"))
             assertTrue(writes.none { it.first == NoteRef.Local(2) }, "note two must not receive note one's text")
         }
 
@@ -127,9 +133,9 @@ class NoteEditorPaneTest {
 
             // Put the caret at the start of the line, then use the toolbar.
             onNode(hasSetTextAction()).performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
 
-            onNode(hasSetTextAction()).assertTextEquals("\u2022 shopping")
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + BULLET_MARKER + "shopping"))
         }
 
     @Test
@@ -143,10 +149,10 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
 
-            onNode(hasSetTextAction()).assertTextEquals("shopping")
+            onNode(hasSetTextAction()).assertTextEquals(drawn("shopping"))
         }
 
     @Test
@@ -163,7 +169,7 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).performClick()
             onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
 
-            onNode(hasSetTextAction()).assertTextEquals("\u2022 milk\n\u2022 ")
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u2022 milk\n\u2022 "))
         }
 
     @Test
@@ -179,6 +185,80 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).performClick()
             onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
 
-            onNode(hasSetTextAction()).assertTextEquals("\u2022 milk\n")
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u2022 milk\n"))
+        }
+
+    @Test
+    fun typingStarSpaceInTheRealFieldMakesABullet() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("*")
+            onNode(hasSetTextAction()).performTextInput(" ")
+
+            // The two characters became one bullet, so the next thing typed is a list item.
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + BULLET_MARKER))
+        }
+
+    @Test
+    fun typingStarSpaceThenTextThenEnterStartsTheNextBullet() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("*")
+            onNode(hasSetTextAction()).performTextInput(" ")
+            onNode(hasSetTextAction()).performTextInput("milk")
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + BULLET_MARKER + "milk\n" + BULLET_INDENT + BULLET_MARKER))
+        }
+
+    @Test
+    fun tabIndentsInTheRealFieldInsteadOfMovingFocus() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Tab) }
+
+            // A tab character, drawn four columns wide. (A click puts the caret at the end, so an empty
+            // note is the case without ambiguity about where the indent lands.)
+            onNode(hasSetTextAction()).assertTextEquals(drawn(INDENT_UNIT))
+        }
+
+    @Test
+    fun deletingTheSpaceAfterABulletEndsTheListInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    // An empty bullet: the caret sits right after the marker's space.
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + BULLET_MARKER),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Backspace) }
+
+            // Deleting the space removed the marker and its indent too, so the field is empty: the
+            // placeholder is back, which is the visible sign of it.
+            onNodeWithText("First line becomes the title\u2026").assertExists()
         }
 }

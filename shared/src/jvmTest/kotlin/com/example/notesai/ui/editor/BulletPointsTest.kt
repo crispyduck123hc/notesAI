@@ -4,6 +4,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * Bullets are characters, so the whole behaviour is a pure function over text and caret position —
@@ -15,13 +16,16 @@ class BulletPointsTest {
         caret: Int,
     ) = TextFieldValue(text = text, selection = TextRange(caret))
 
+    /** A bullet as it is created: an indent, then the marker. */
+    private val newBullet = BULLET_INDENT + BULLET_MARKER
+
     @Test
     fun anEmptyNoteGetsABulletAndTheCaretMovesPastIt() {
         val result = toggleBullet(value("", caret = 0))
 
-        assertEquals("\u2022 ", result.text)
+        assertEquals(newBullet, result.text)
         assertEquals(
-            "\u2022 ".length,
+            newBullet.length,
             result.selection.start,
             "the caret must land after the marker, or the next keystroke goes before it",
         )
@@ -31,9 +35,9 @@ class BulletPointsTest {
     fun aBulletIsAddedAtTheStartOfTheLineTheCaretIsOn() {
         val result = toggleBullet(value("first\nsecond", caret = 9)) // inside "second"
 
-        assertEquals("first\n\u2022 second", result.text)
-        // Caret was 3 characters into the line; the two-character marker pushes it to 5.
-        assertEquals(11, result.selection.start)
+        assertEquals("first\n" + newBullet + "second", result.text)
+        // Caret was 3 characters into the line; the indent and marker push it past both.
+        assertEquals(9 + newBullet.length, result.selection.start)
     }
 
     @Test
@@ -57,7 +61,7 @@ class BulletPointsTest {
     fun otherLinesAreLeftAlone() {
         val result = toggleBullet(value("\u2022 one\ntwo\nthree", caret = 12)) // inside "three"
 
-        assertEquals("\u2022 one\ntwo\n\u2022 three", result.text)
+        assertEquals("\u2022 one\ntwo\n" + newBullet + "three", result.text)
     }
 
     @Test
@@ -66,7 +70,7 @@ class BulletPointsTest {
         // button adds its own rather than guessing that the dash was meant to be one.
         val result = toggleBullet(value("- dashed", caret = 8))
 
-        assertEquals("\u2022 - dashed", result.text)
+        assertEquals(newBullet + "- dashed", result.text)
     }
 
     // ---- Enter: continue the bullet, or end the list on an empty one ----------------------------
@@ -183,5 +187,190 @@ class BulletPointsTest {
         val composing = after.copy(composition = TextRange(0, 1))
 
         assertEquals(composing, continueBullets(before, composing))
+    }
+
+    // ---- The "* " shortcut -----------------------------------------------------------------------
+
+    /** What the field would produce for typing [character] at [caret]. */
+    private fun typed(
+        text: String,
+        character: Char,
+        caret: Int = text.length,
+    ): Pair<TextFieldValue, TextFieldValue> {
+        val before = value(text, caret = caret)
+        val after =
+            before.copy(
+                text = text.substring(0, caret) + character + text.substring(caret),
+                selection = TextRange(caret + 1),
+            )
+        return before to after
+    }
+
+    private fun shortcutResult(text: String): TextFieldValue? {
+        val (before, after) = typed(text, ' ')
+        return promoteListShortcut(before, after)
+    }
+
+    @Test
+    fun starThenSpaceAtTheStartOfTheNoteMakesABullet() {
+        val result = shortcutResult("*")
+
+        assertEquals(newBullet, result?.text)
+        assertEquals(newBullet.length, result?.selection?.start, "the caret sits after the marker")
+    }
+
+    @Test
+    fun starThenSpaceAtTheStartOfALineMakesABullet() {
+        val result = shortcutResult("first\n*")
+
+        assertEquals("first\n" + newBullet, result?.text)
+    }
+
+    @Test
+    fun aHandTypedIndentIsKeptByTheShortcut() {
+        val result = shortcutResult("    *")
+
+        assertEquals("    " + BULLET_MARKER, result?.text, "the indent the user typed, not a second one")
+    }
+
+    @Test
+    fun aStarMidLineIsJustAStar() {
+        assertNull(shortcutResult("a *"), "only the start of a line makes a list")
+    }
+
+    @Test
+    fun aSecondSpaceDoesNotPromoteAnything() {
+        // "*  " — after the first space the line is already a bullet, so the second is just a space.
+        assertNull(shortcutResult("* "))
+    }
+
+    @Test
+    fun otherCharactersAreNotTheShortcut() {
+        val (before, after) = typed("*", 'x')
+
+        assertNull(promoteListShortcut(before, after))
+    }
+
+    @Test
+    fun theShortcutDoesNotFireOnPaste() {
+        // Two characters arriving at once is not "typing a space after a star".
+        val before = value("*", caret = 1)
+        val pasted = before.copy(text = "* x", selection = TextRange(3))
+
+        assertNull(promoteListShortcut(before, pasted))
+    }
+
+    @Test
+    fun aPromotedBulletContinuesOnEnter() {
+        // The two features together: the shortcut makes "  • ", typing a word keeps it, Enter makes the next one.
+        val (before, after) = typed("*", ' ')
+        val promoted = promoteListShortcut(before, after)!!
+        val withText = promoted.copy(text = promoted.text + "milk", selection = TextRange(promoted.text.length + 4))
+
+        val (_, entered) = typed(withText.text, '\n', caret = withText.text.length)
+        val continued = continueBullets(withText, entered)
+
+        assertEquals(newBullet + "milk\n" + newBullet, continued.text)
+        assertEquals(
+            (newBullet + "milk\n" + newBullet).length,
+            continued.selection.start,
+            "the caret sits after the next marker",
+        )
+    }
+
+    @Test
+    fun theToolbarAndTheShortcutAgree() {
+        val fromToolbar = toggleBullet(value("", caret = 0))
+        val fromShortcut = shortcutResult("*")!!
+
+        assertEquals(fromToolbar.text, fromShortcut.text, "one marker, one indent, however it was asked for")
+    }
+
+    // ---- Tab, and deleting a bullet's space ------------------------------------------------------
+
+    @Test
+    fun tabInsertsOneIndentUnitAtTheCaret() {
+        val result = indentAtCaret(value("milk", caret = 0))
+
+        assertEquals(INDENT_UNIT + "milk", result.text)
+        assertEquals(INDENT_UNIT.length, result.selection.start, "the caret follows the tab")
+    }
+
+    @Test
+    fun tabReplacesASelection() {
+        val result = indentAtCaret(value("milk", caret = 0).copy(selection = TextRange(0, 4)))
+
+        assertEquals(INDENT_UNIT, result.text)
+        assertEquals(INDENT_UNIT.length, result.selection.start)
+    }
+
+    @Test
+    fun theIndentUnitIsATab() {
+        assertEquals("\t", INDENT_UNIT, "a note is plain text: the indent is a tab, not spaces")
+        assertEquals(INDENT_UNIT, BULLET_INDENT, "the bullet and the Tab key indent by the same thing")
+    }
+
+    /** Backspace (or Delete) removing one character, as the field would report it. */
+    private fun deleted(
+        text: String,
+        index: Int,
+    ): Pair<TextFieldValue, TextFieldValue> {
+        val before = value(text, caret = index + 1)
+        val after = before.copy(text = text.removeRange(index, index + 1), selection = TextRange(index))
+        return before to after
+    }
+
+    @Test
+    fun deletingTheSpaceAfterABulletEndsTheList() {
+        // "  • milk" with the space after the bullet removed, leaving "  •milk".
+        val (before, after) = deleted(INDENT_UNIT + "\u2022 milk", index = INDENT_UNIT.length + 1)
+
+        val result = endListOnMarkerSpaceDeletion(before, after)
+
+        assertEquals("milk", result?.text, "the marker and its indent go, the text stays")
+        assertEquals(0, result?.selection?.start)
+    }
+
+    @Test
+    fun deletingTheSpaceRightAfterTheBulletGlyphIsWhatCounts() {
+        // Deleting a different space in the line is just editing.
+        val (before, after) = deleted("\u2022 two words", index = 5)
+
+        assertNull(endListOnMarkerSpaceDeletion(before, after))
+    }
+
+    @Test
+    fun deletingASpaceOnAPlainLineDoesNothingSpecial() {
+        val (before, after) = deleted("two words", index = 3)
+
+        assertNull(endListOnMarkerSpaceDeletion(before, after))
+    }
+
+    @Test
+    fun deletingTheSpaceFromAnEmptyBulletLeavesAnEmptyLine() {
+        val (before, after) = deleted("\u2022 ", index = 1)
+
+        assertEquals("", endListOnMarkerSpaceDeletion(before, after)?.text)
+    }
+
+    @Test
+    fun pastingIsNotDeletion() {
+        val before = value("\u2022 milk", caret = 7)
+        val pasted = before.copy(text = "\u2022 mil", selection = TextRange(6))
+
+        assertNull(endListOnMarkerSpaceDeletion(before, pasted))
+    }
+
+    @Test
+    fun thePipelineHandlesBothDirections() {
+        // The entry point the editor uses: typing the shortcut, and deleting the space again.
+        val (starBefore, starAfter) = typed("*", ' ')
+        val promoted = applyEditorTyping(starBefore, starAfter)
+        assertEquals(BULLET_INDENT + BULLET_MARKER, promoted.text)
+
+        val withText = promoted.copy(text = promoted.text + "milk", selection = TextRange(promoted.text.length + 4))
+        val (before, after) = deleted(withText.text, index = BULLET_INDENT.length + BULLET_MARKER.trimEnd().length)
+
+        assertEquals("milk", applyEditorTyping(before, after).text)
     }
 }
