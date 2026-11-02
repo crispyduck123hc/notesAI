@@ -133,7 +133,7 @@ internal fun NoteEditorPane(
             TextButton(
                 onClick = { textState.value = toggleBullet(textState.value) },
             ) {
-                Text("\u2022")
+                Text("\u2022 Bullet list")
             }
         }
 
