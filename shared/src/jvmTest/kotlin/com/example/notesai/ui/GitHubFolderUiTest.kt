@@ -2,15 +2,15 @@ package com.example.notesai.ui
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.example.notesai.ui.tree.TREE_ROW_TAG
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -40,13 +40,15 @@ class GitHubFolderUiTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
                 // Selecting the node is what shows that repository's actions.
-                onNodeWithText("octocat/notes").performClick()
+                // Clicking the row selects the repository *and* expands it; the chevron only reports the
+                // state, so it is no longer the way in.
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("Force pull\u2026").fetchSemanticsNodes().isNotEmpty()
                 }
 
                 // Expand it via the chevron inside that row.
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$open open issue").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -89,8 +91,8 @@ class GitHubFolderUiTest {
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
-                onNodeWithText("octocat/notes").performClick()
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$number title").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -131,7 +133,7 @@ class GitHubFolderUiTest {
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
-                onNodeWithText("octocat/notes").performClick()
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("New issue\u2026").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -166,8 +168,8 @@ class GitHubFolderUiTest {
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
-                onNodeWithText("octocat/notes").performClick()
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$number task").fetchSemanticsNodes().isNotEmpty()
                 }

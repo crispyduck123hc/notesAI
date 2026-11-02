@@ -1,13 +1,14 @@
 package com.example.notesai.ui
 
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.height
 import com.example.notesai.APP_VERSION
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.ui.tree.TREE_ROW_TAG
 import com.example.notesai.update.AvailableUpdate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -209,7 +211,7 @@ class NotesScreenTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
                 // Expand the repository so an issue row exists to measure.
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -218,7 +220,9 @@ class NotesScreenTest {
                 // be implied by its contents, so rows with a delete button were 48dp and the rest 20dp.
                 val labels = listOf("root", "my folder", "a note", "octocat/notes", "#1 an issue")
                 val heights: Map<String, androidx.compose.ui.unit.Dp> =
-                    labels.associateWith { label -> onNodeWithText(label).getUnclippedBoundsInRoot().height }
+                    labels.associateWith { label ->
+                        onNode(hasTestTag(TREE_ROW_TAG) and hasText(label)).getUnclippedBoundsInRoot().height
+                    }
 
                 assertEquals(
                     1,
@@ -234,7 +238,7 @@ class NotesScreenTest {
         }
 
     @Test
-    fun theChevronSaysWhatItWillDo() =
+    fun clickingARowExpandsAndCollapsesIt() =
         runComposeUiTest {
             val fixture = ScreenFixture()
             try {
@@ -246,15 +250,50 @@ class NotesScreenTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
 
-                // Collapsed: the chevron offers to expand, and says so rather than being a bare glyph.
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).assertExists()
-                onNode(hasContentDescription("Collapse") and hasAnyAncestor(hasText("octocat/notes"))).assertDoesNotExist()
+                // Collapsed, and the row is what says so: the chevron beside it is only a shape.
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes"))
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
 
-                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
-
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
                 waitUntil(timeoutMillis = 5_000) {
-                    onAllNodesWithContentDescription("Collapse").fetchSemanticsNodes().isNotEmpty()
+                    onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isNotEmpty()
                 }
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes"))
+                    .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+
+                // Pressing it again closes it: the row is the control, not the chevron.
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun theChevronIsOnlyAnIndicator() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.server.addIssue(title = "an issue", body = "body")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                // Exactly one node carries "Collapsed": the row itself. The chevron is not a control, so
+                // its state merges into the row instead of standing alone — and a pressable chevron would
+                // become its own node, carrying a second copy of the state and, with it, the hover overlay
+                // that used to sit around it.
+                assertEquals(
+                    1,
+                    onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+                        .fetchSemanticsNodes()
+                        .size,
+                )
             } finally {
                 fixture.close()
             }
