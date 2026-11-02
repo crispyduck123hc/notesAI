@@ -2,12 +2,18 @@ package com.example.notesai.ui
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.height
 import com.example.notesai.APP_VERSION
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.update.AvailableUpdate
@@ -183,6 +189,72 @@ class NotesScreenTest {
                     onAllNodesWithText("Update available: v1.2.1").fetchSemanticsNodes().isEmpty(),
                     "no update prompt when there is no update",
                 )
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun everyKindOfTreeRowIsTheSameHeight() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.repository.addFolder("my folder")
+                fixture.repository.addNote(text = "a note", folderId = NoteRepository.ROOT_FOLDER_ID)
+                fixture.server.addIssue(title = "an issue", body = "body")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                // Expand the repository so an issue row exists to measure.
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                // A root folder, a folder, a note, a repository node and an issue: the row height used to
+                // be implied by its contents, so rows with a delete button were 48dp and the rest 20dp.
+                val labels = listOf("root", "my folder", "a note", "octocat/notes", "#1 an issue")
+                val heights: Map<String, androidx.compose.ui.unit.Dp> =
+                    labels.associateWith { label -> onNodeWithText(label).getUnclippedBoundsInRoot().height }
+
+                assertEquals(
+                    1,
+                    heights.values
+                        .map { it.value }
+                        .toSet()
+                        .size,
+                    "tree rows should all be the same height, got $heights",
+                )
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun theChevronSaysWhatItWillDo() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.server.addIssue(title = "an issue", body = "body")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                // Collapsed: the chevron offers to expand, and says so rather than being a bare glyph.
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).assertExists()
+                onNode(hasContentDescription("Collapse") and hasAnyAncestor(hasText("octocat/notes"))).assertDoesNotExist()
+
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithContentDescription("Collapse").fetchSemanticsNodes().isNotEmpty()
+                }
             } finally {
                 fixture.close()
             }

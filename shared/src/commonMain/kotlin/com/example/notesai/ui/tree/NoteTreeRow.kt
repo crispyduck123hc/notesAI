@@ -4,14 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.notesai.ui.theme.Dimens
 
@@ -60,6 +64,8 @@ internal fun NoteTreeRow(
     unsaved: Boolean = false,
     /** Null when this row cannot be deleted — the presence of the action is the permission. */
     onDelete: (() -> Unit)? = null,
+    /** Read out by a screen reader, and what a test can find the delete action by. */
+    deleteLabel: String = "Delete",
     onRename: (() -> Unit)? = null,
     onMove: (() -> Unit)? = null,
     onComplete: (() -> Unit)? = null,
@@ -81,15 +87,33 @@ internal fun NoteTreeRow(
                         },
                     ).clickable(onClick = onClick)
                     .onSecondaryClick { menuOpen = true }
+                    // Every row is the same height whatever it holds: the tree used to have two rhythms,
+                    // because rows with a delete button grew to Material's minimum touch target.
+                    .height(Dimens.TreeRowHeight)
                     .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * depth),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(modifier = Modifier.width(Dimens.TreeChevronWidth), contentAlignment = Alignment.Center) {
+            Box(
+                modifier =
+                    Modifier
+                        .width(Dimens.TreeChevronWidth)
+                        .fillMaxHeight()
+                        .then(
+                            if (chevron == null) {
+                                Modifier
+                            } else {
+                                Modifier
+                                    // Named rather than described by a glyph: a drawn triangle has no
+                                    // text for a screen reader (or a test) to match on.
+                                    .semantics {
+                                        contentDescription = if (chevron.expanded) "Collapse" else "Expand"
+                                    }.clickable(onClick = chevron.onToggle)
+                            },
+                        ),
+                contentAlignment = Alignment.Center,
+            ) {
                 if (chevron != null) {
-                    Text(
-                        text = if (chevron.expanded) "\u25BE" else "\u25B8",
-                        modifier = Modifier.clickable(onClick = chevron.onToggle),
-                    )
+                    ChevronIcon(expanded = chevron.expanded)
                 }
             }
 
@@ -119,8 +143,19 @@ internal fun NoteTreeRow(
             }
 
             if (onDelete != null) {
-                TextButton(onClick = onDelete) {
-                    Text("\u2715")
+                // A sized box rather than a TextButton: Material's button brings a 48dp minimum height,
+                // which is exactly what made these rows taller than the ones without a delete.
+                Box(
+                    modifier =
+                        Modifier
+                            .size(Dimens.TreeDeleteSize)
+                            .clip(MaterialTheme.shapes.small)
+                            .clickable(onClickLabel = deleteLabel, onClick = onDelete),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CrossIcon(
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

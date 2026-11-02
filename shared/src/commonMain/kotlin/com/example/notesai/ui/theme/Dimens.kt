@@ -26,6 +26,24 @@ object Dimens {
     /** Width of the chevron column in a tree row. */
     val TreeChevronWidth = 24.dp
 
+    /**
+     * Height of every tree row, whatever it holds.
+     *
+     * Rows used to size themselves: the ones with a delete affordance grew to Material's 48dp minimum
+     * touch target while folders and repository nodes stayed at text height, so the tree had two
+     * rhythms. Stating the height once makes them the same, and retuning the tree is this one value.
+     */
+    val TreeRowHeight = 48.dp
+
+    /** The chevron glyph itself, inside [TreeChevronWidth]. Sized in dp, not in type units. */
+    val TreeChevronSize = 12.dp
+
+    /** Stroke width for the drawn tree glyphs (chevron and delete cross). */
+    val TreeGlyphStroke = 1.5.dp
+
+    /** Box for the delete affordance, so its tap target is fixed rather than implied by a font. */
+    val TreeDeleteSize = 24.dp
+
     /** Upper bound for dialog content, so long text wraps instead of stretching the dialog. */
     val DialogMaxWidth = 420.dp
 

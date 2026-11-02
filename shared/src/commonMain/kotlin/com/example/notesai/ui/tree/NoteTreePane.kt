@@ -93,6 +93,7 @@ internal fun NoteTreePane(
                             // The root is the anchor for everything else, so it cannot be deleted —
                             // but naming it is still the user's business.
                             onDelete = if (item.isRoot) null else ({ onDeleteFolder(item.id) }),
+                            deleteLabel = "Delete folder",
                             onRename = ({ onRenameFolder(item.id) }),
                         )
 
@@ -113,6 +114,7 @@ internal fun NoteTreePane(
                             selected = selectedRef == item.ref,
                             onClick = { onSelectNote(item) },
                             onDelete = ({ onDeleteNote(item.id) }),
+                            deleteLabel = "Delete note",
                             onMove = ({ onMoveNote(item.id) }),
                         )
 

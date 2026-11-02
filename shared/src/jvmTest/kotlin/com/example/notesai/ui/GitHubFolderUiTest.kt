@@ -3,6 +3,7 @@ package com.example.notesai.ui
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
@@ -45,7 +46,7 @@ class GitHubFolderUiTest {
                 }
 
                 // Expand it via the chevron inside that row.
-                onNode(hasText("\u25B8") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$open open issue").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -89,7 +90,7 @@ class GitHubFolderUiTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
                 onNodeWithText("octocat/notes").performClick()
-                onNode(hasText("\u25B8") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$number title").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -166,7 +167,7 @@ class GitHubFolderUiTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
                 onNodeWithText("octocat/notes").performClick()
-                onNode(hasText("\u25B8") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
+                onNode(hasContentDescription("Expand") and hasAnyAncestor(hasText("octocat/notes"))).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$number task").fetchSemanticsNodes().isNotEmpty()
                 }
