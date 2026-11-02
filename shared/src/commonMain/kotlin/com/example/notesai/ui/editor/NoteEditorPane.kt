@@ -130,9 +130,14 @@ internal fun NoteEditorPane(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
-                onClick = { textState.value = toggleBullet(textState.value) },
+                onClick = { textState.value = toggleList(textState.value, ListKind.BULLET) },
             ) {
                 Text("\u2022 Bullet list")
+            }
+            TextButton(
+                onClick = { textState.value = toggleList(textState.value, ListKind.DASH) },
+            ) {
+                Text("${DASH_MARKER.trimEnd()} Dash list")
             }
         }
 
