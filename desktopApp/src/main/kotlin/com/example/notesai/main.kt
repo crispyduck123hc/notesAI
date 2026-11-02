@@ -30,8 +30,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 private const val SHUTDOWN_GRACE_MILLIS = 500L
 
-/** Never hold the user's window open longer than this for a best-effort upload. */
-private const val SHUTDOWN_TIMEOUT_MILLIS = 3_000L
+/**
+ * Never hold the user's window open longer than this for a best-effort upload.
+ *
+ * Deliberately longer than one HTTP request (`REQUEST_TIMEOUT_MILLIS` in the shared module): at 3s this used
+ * to cut uploads off mid-flight, which left the app unable to tell whether Drive had taken the bytes. An
+ * abandoned request is retried next launch; a request cancelled halfway through is a question the next launch
+ * answers by making a second copy of the note.
+ */
+private const val SHUTDOWN_TIMEOUT_MILLIS = 15_000L
 
 fun main() {
     // One instance per data directory. Two copies share a database and a Google account, which makes
@@ -75,7 +82,13 @@ private fun runApp() =
                     scope.launch {
                         if (exitFlush.hasQueuedWork()) {
                             delay(SHUTDOWN_GRACE_MILLIS)
-                            withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) { exitFlush.run() }
+                            // The deadline is when this ceiling will cut the flush off. Handing it to the engine
+                            // lets it decline to start a request it could not finish inside that time — a request
+                            // killed mid-flight is what leaves the next launch unsure whether a note reached Drive.
+                            val deadline = System.currentTimeMillis() + SHUTDOWN_TIMEOUT_MILLIS
+                            withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
+                                exitFlush.run(deadlineMillis = deadline)
+                            }
                         }
                         exitApplication()
                     }

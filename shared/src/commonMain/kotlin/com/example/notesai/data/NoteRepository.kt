@@ -320,6 +320,31 @@ class NoteRepository(
         }
     }
 
+    /**
+     * Documents a keep-both copy that arrived from another device.
+     *
+     * The device that *made* the decision records it; a device that merely pulls the copy has no such
+     * record, so the same duplicate appears there with nothing to explain it. Recording it here means
+     * every device can say why the note has a twin. Idempotent, because the same file is pulled again on
+     * the next pass.
+     */
+    fun recordPulledConflictCopy(
+        copyUuid: String,
+        originalUuid: String,
+    ) {
+        if (queries.selectConflictByCopy(copyUuid).executeAsOneOrNull() != null) return
+        recordConflict(
+            entityType = EntityType.NOTE,
+            entityUuid = originalUuid,
+            kind = "edit-vs-edit",
+            // The revisions belong to the pass that decided; on a pull we only know that two texts existed.
+            localRevision = null,
+            remoteRevision = null,
+            resolution = "keep-both",
+            conflictCopyUuid = copyUuid,
+        )
+    }
+
     fun conflictById(id: Long): ConflictInbox? = queries.selectConflictById(id).executeAsOneOrNull()
 
     fun resolveConflictRow(
@@ -405,6 +430,9 @@ class NoteRepository(
     )
 
     fun unresolvedConflicts(): List<ConflictInbox> = queries.selectUnresolvedConflicts().executeAsList()
+
+    /** Every conflict ever recorded, resolved or not — the explanation for a copy that exists locally. */
+    fun allConflicts(): List<ConflictInbox> = queries.selectAllConflicts().executeAsList()
 
     // ---- Sync: apply remote changes --------------------------------------
     // These deliberately do NOT mark anything dirty: the change already exists remotely.

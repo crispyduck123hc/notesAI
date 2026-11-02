@@ -272,7 +272,16 @@ WHERE uuid = ?;
 selectUnresolvedConflict:
 SELECT * FROM ConflictInbox
 WHERE entityType = ? AND entityUuid = ? AND resolvedAt IS NULL
-ORDER BY detectedAt DESC
+ORDER BY detectedAt DESC;
+
+selectAllConflicts:
+SELECT * FROM ConflictInbox ORDER BY detectedAt;
+
+-- A keep-both copy can arrive twice (a re-pull, or the same copy seen on another device), and the inbox
+-- should explain it once rather than once per sync.
+selectConflictByCopy:
+SELECT * FROM ConflictInbox
+WHERE conflictCopyUuid = ?
 LIMIT 1;
 
 selectConflictById:

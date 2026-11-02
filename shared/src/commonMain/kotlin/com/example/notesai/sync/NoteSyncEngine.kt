@@ -4,6 +4,7 @@ import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.data.noteTitle
 import com.example.notesai.db.SyncBaseline
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
@@ -78,6 +79,8 @@ private data class PendingFolder(
 class NoteSyncEngine(
     private val repository: NoteRepository,
     private val remote: SyncRemote,
+    /** Injected so a test can run the clock forward mid-pass; production always uses the wall clock. */
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val syncMutex = Mutex()
 
@@ -93,12 +96,27 @@ class NoteSyncEngine(
     suspend fun sync(
         pushSettleMillis: Long = 0L,
         nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
-    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis) }
+        deadlineMillis: Long? = null,
+    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis, deadlineMillis) }
 
+    /**
+     * True when there is no longer enough of [deadlineMillis] left for one request to complete.
+     *
+     * Checked *after* the mutex is taken, which is the whole point: the wait for a pass already in progress is
+     * time the caller's budget does not get back, and only here is the real remainder known. With no deadline
+     * (every pass except the shutdown flush) the answer is always yes.
+     */
+    private fun hasTimeForARequest(deadlineMillis: Long?): Boolean = deadlineMillis == null || deadlineMillis - clock() >= MINIMUM_PASS_BUDGET_MILLIS
+
+    @Suppress("LongParameterList") // three knobs, all of them meaningful at a call site
     private suspend fun syncPass(
         pushSettleMillis: Long,
         nowMillis: Long,
+        deadlineMillis: Long?,
     ): SyncResult {
+        // Nothing started: starting a request that cannot finish is what makes the next launch unsure whether a
+        // note reached Drive. The queue keeps the work; the next pass delivers it.
+        if (!hasTimeForARequest(deadlineMillis)) return SyncResult(0, 0, 0, 0)
         val entriesByUuid =
             remote
                 .list()
@@ -140,63 +158,97 @@ class NoteSyncEngine(
         val folders = decisions.filter { it.entityType == EntityType.FOLDER }
         val notes = decisions.filter { it.entityType != EntityType.FOLDER }
 
+        // Folders before notes so a pulled note can resolve its parent, and pulls before pushes so remote
+        // structure exists before we write against it.
+        val folderPhase = runPhase(folders, deadlineMillis)
+        val notePhase = runPhase(notes, deadlineMillis)
+
+        val purged = purgeExpiredTombstones()
+        return SyncResult(
+            pushed = folderPhase.pushed + notePhase.pushed,
+            pulled = folderPhase.pulled + notePhase.pulled,
+            conflictsResolved = folderPhase.resolved + notePhase.resolved,
+            conflictsPending = folderPhase.pending + notePhase.pending,
+            purged = purged,
+            failed = folderPhase.failed + notePhase.failed,
+        )
+    }
+
+    /** What one group of decisions achieved. */
+    private data class PhaseResult(
+        val pushed: Int = 0,
+        val pulled: Int = 0,
+        val resolved: Int = 0,
+        val pending: Int = 0,
+        val failed: Int = 0,
+    )
+
+    /**
+     * Applies one group of decisions — files or notes — stopping as soon as the clock will not allow another
+     * request.
+     *
+     * Stopping early leaves the remaining records queued, which is the whole point: an unfinished request is
+     * ambiguous in a way a queued row is not.
+     */
+    private suspend fun runPhase(
+        decisions: List<Decision>,
+        deadlineMillis: Long?,
+    ): PhaseResult {
+        val isFolder = decisions.firstOrNull()?.entityType == EntityType.FOLDER
+        var pulled = if (isFolder) pullFolders(decisions.filter { it.action == Action.PULL }) else pullNotes(decisions.filter { it.action == Action.PULL })
         var pushed = 0
-        var pulled = 0
         var resolved = 0
         var pending = 0
         var failed = 0
 
-        // Folders before notes so a pulled note can resolve its parent, and pulls before
-        // pushes so remote structure exists before we write against it.
-        pulled += pullFolders(folders.filter { it.action == Action.PULL })
-        for (decision in folders) {
+        for (decision in decisions) {
+            if (!hasTimeForARequest(deadlineMillis)) break
             try {
-                when (decision.action) {
-                    Action.PUSH -> if (push(decision)) pushed++
-                    Action.PULL -> Unit
-                    Action.CONFLICT, Action.RECONCILE ->
-                        if (
-                            deferConflict(
-                                decision,
-                                if (decision.remote == null) "remote-missing" else "folder-conflict",
-                            )
-                        ) {
-                            pending++
-                        }
-                }
+                val step = apply(decision)
+                pulled += step.pulled
+                pushed += step.pushed
+                resolved += step.resolved
+                pending += step.pending
+            } catch (cancellation: CancellationException) {
+                // Quitting the app cancels the pass mid-request. That is not a failed write — recording it as one
+                // is how "Timed out waiting for 3000 ms" ended up in the outbox — and it must not be swallowed, or
+                // the pass would carry on as though the user had not asked it to stop.
+                throw cancellation
             } catch (t: Throwable) {
                 repository.recordOutboxAttempt(decision.entityType, decision.uuid, t.message)
+                adoptIfTheWriteLanded(decision)
                 failed++
             }
         }
 
-        pulled += pullNotes(notes.filter { it.action == Action.PULL })
-        for (decision in notes) {
-            try {
-                when (decision.action) {
-                    Action.PUSH -> if (push(decision)) pushed++
-                    Action.PULL -> Unit
-                    Action.RECONCILE -> if (deferConflict(decision, "remote-missing")) pending++
-                    Action.CONFLICT -> {
-                        val resolution = resolveNoteConflict(decision)
-                        pushed += resolution.published
-                        when (resolution.outcome) {
-                            ConflictOutcome.KEEP_BOTH -> resolved++
-                            ConflictOutcome.DEFERRED -> pending++
-                            ConflictOutcome.NONE -> Unit
-                        }
-                    }
-                }
-            } catch (t: Throwable) {
-                // One unreadable record must not block every other change in the sync.
-                repository.recordOutboxAttempt(decision.entityType, decision.uuid, t.message)
-                failed++
-            }
-        }
-
-        val purged = purgeExpiredTombstones()
-        return SyncResult(pushed, pulled, resolved, pending, purged, failed)
+        return PhaseResult(pushed = pushed, pulled = pulled, resolved = resolved, pending = pending, failed = failed)
     }
+
+    /** One decision, applied. */
+    private suspend fun apply(decision: Decision): PhaseResult =
+        when (decision.action) {
+            Action.PUSH -> PhaseResult(pushed = if (push(decision)) 1 else 0)
+            Action.PULL -> PhaseResult()
+            Action.CONFLICT, Action.RECONCILE -> resolve(decision)
+        }
+
+    private suspend fun resolve(decision: Decision): PhaseResult =
+        when {
+            decision.entityType == EntityType.FOLDER -> {
+                val deferred =
+                    deferConflict(decision, if (decision.remote == null) "remote-missing" else "folder-conflict")
+                PhaseResult(pending = if (deferred) 1 else 0)
+            }
+            decision.action == Action.RECONCILE -> PhaseResult(pending = if (deferConflict(decision, "remote-missing")) 1 else 0)
+            else -> {
+                val resolution = resolveNoteConflict(decision)
+                PhaseResult(
+                    pushed = resolution.published,
+                    resolved = if (resolution.outcome == ConflictOutcome.KEEP_BOTH) 1 else 0,
+                    pending = if (resolution.outcome == ConflictOutcome.DEFERRED) 1 else 0,
+                )
+            }
+        }
 
     /**
      * Forgets tombstones older than [retentionMillis], deleting their remote files too.
@@ -471,6 +523,13 @@ class NoteSyncEngine(
             conflictOf = file.conflictOf,
         )
         repository.setBaseline(EntityType.NOTE, file.uuid, entry.fileId, entry.version)
+
+        // A keep-both copy carries the uuid of the note it diverged from. The device that made the decision
+        // recorded it; this one has just received the consequence, so it records the same explanation —
+        // otherwise the duplicate appears with nothing to say why.
+        file.conflictOf?.let { original ->
+            repository.recordPulledConflictCopy(copyUuid = file.uuid, originalUuid = original)
+        }
     }
 
     // ---- Conflicts ---------------------------------------------------------
@@ -588,6 +647,38 @@ class NoteSyncEngine(
             conflictCopyUuid = copy?.uuid,
         )
         return Resolution(ConflictOutcome.KEEP_BOTH, published)
+    }
+
+    /**
+     * After a request fails, the remote may still have applied it — a timeout says nothing about what the
+     * server did with the bytes it received.
+     *
+     * If the remote now holds exactly what we were writing, the write landed: adopt that entry as the
+     * baseline and clear the queue. Without this the next pass finds a remote file for a uuid whose baseline
+     * is missing, decides the remote "changed", reads it as somebody else's edit, and keeps both texts — so
+     * one note becomes two copies of itself. Best effort: if the check itself fails, the retry happens next
+     * pass exactly as before.
+     */
+    @Suppress("ReturnCount") // each guard is "the remote does not prove it, so retry normally"
+    private suspend fun adoptIfTheWriteLanded(decision: Decision) {
+        val content = contentFor(decision.entityType, decision.uuid) ?: return
+        val entry =
+            decision.remote
+                ?: attemptQuietly {
+                    remote.list().firstOrNull { it.name == fileNameFor(decision.entityType, decision.uuid) }
+                } ?: return
+        val remoteContent = attemptQuietly { remote.download(entry.fileId) } ?: return
+        if (remoteContent != content) return
+
+        repository.setBaseline(decision.entityType, decision.uuid, entry.fileId, entry.version)
+        repository.clearOutbox(decision.entityType, decision.uuid)
+    }
+
+    /** Runs [block], turning any failure into null — except cancellation, which must keep travelling. */
+    private suspend fun <T> attemptQuietly(block: suspend () -> T): T? {
+        val result = runCatching { block() }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        return result.getOrNull()
     }
 
     // ---- Helpers -----------------------------------------------------------
