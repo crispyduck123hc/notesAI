@@ -88,8 +88,13 @@ internal fun NoteTreePane(
                             label = item.label,
                             depth = item.depth,
                             selected = item.id == selectedFolderId,
-                            chevron = chevronFor(item, onToggle),
-                            onClick = { onSelectFolder(item.id) },
+                            expanded = item.expanded.takeIf { item.expandable },
+                            onClick = {
+                                // Selecting makes the folder the target for new notes; expanding is what
+                                // clicking a folder in a tree is expected to do. The chevron reports both.
+                                onSelectFolder(item.id)
+                                if (item.expandable) onToggle(item.id)
+                            },
                             // The root is the anchor for everything else, so it cannot be deleted —
                             // but naming it is still the user's business.
                             onDelete = if (item.isRoot) null else ({ onDeleteFolder(item.id) }),
@@ -102,8 +107,13 @@ internal fun NoteTreePane(
                             label = item.label,
                             depth = item.depth,
                             selected = item.nodeId == selectedFolderId,
-                            chevron = chevronFor(item, onToggle),
-                            onClick = { onSelectFolder(item.nodeId) },
+                            expanded = item.expanded.takeIf { item.expandable },
+                            onClick = {
+                                // Selecting the node is what shows its link/pull/push actions below the
+                                // tree, so a click has to do both rather than trade one for the other.
+                                onSelectFolder(item.nodeId)
+                                if (item.expandable) onToggle(item.nodeId)
+                            },
                             // A repository is unlinked from its action row, never deleted like a folder.
                         )
 
@@ -313,23 +323,3 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         Text("Unlink")
     }
 }
-
-/**
- * A chevron for rows that expand, and nothing for rows that do not.
- *
- * The toggle id differs by kind — a folder's own id, a repository's synthetic node id — so each
- * branch supplies it rather than the row having to know.
- */
-private fun chevronFor(
-    item: NoteTreeItem,
-    onToggle: (Long) -> Unit,
-): TreeChevron? =
-    when (item) {
-        is NoteTreeItem.Folder ->
-            if (item.expandable) TreeChevron(item.expanded) { onToggle(item.id) } else null
-
-        is NoteTreeItem.Repository ->
-            if (item.expandable) TreeChevron(item.expanded) { onToggle(item.nodeId) } else null
-
-        is NoteTreeItem.Note, is NoteTreeItem.Issue -> null
-    }

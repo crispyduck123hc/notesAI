@@ -26,21 +26,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.notesai.ui.theme.Dimens
 
 /**
- * The chevron on a row that expands, along with what pressing it does.
+ * What pressing this row will do, for a screen reader.
  *
- * One value instead of an `expanded` flag plus a nullable callback, so a chevron cannot be drawn
- * without something to do, or a toggle offered without a chevron to press.
+ * Null for rows that do not expand: a click there opens something rather than changing the row, and
+ * naming an action that does not exist would be worse than saying nothing.
  */
-internal data class TreeChevron(
-    val expanded: Boolean,
-    val onToggle: () -> Unit,
-)
+private fun clickLabel(expanded: Boolean?): String? =
+    when (expanded) {
+        null -> null
+        true -> "Collapse"
+        false -> "Expand"
+    }
 
 /**
  * One row of the tree: an indentation-guide chevron (expandable rows only), the label, an optional
@@ -56,8 +59,14 @@ internal fun NoteTreeRow(
     depth: Int,
     selected: Boolean,
     onClick: () -> Unit,
-    /** Null for rows that do not expand. */
-    chevron: TreeChevron? = null,
+    /**
+     * Whether this row expands, and whether it is open now; null for rows with nothing inside.
+     *
+     * The chevron only shows this — pressing the row is what toggles it — so the value carries no
+     * callback. That is also why an interactive box around the chevron could be deleted: with no
+     * `clickable` on it there is no hover overlay to darken it.
+     */
+    expanded: Boolean? = null,
     /** Small secondary label, e.g. an issue's state. */
     badge: String? = null,
     /** A dot marking local edits that have not been pushed. */
@@ -85,11 +94,14 @@ internal fun NoteTreeRow(
                         } else {
                             Color.Transparent
                         },
-                    ).clickable(onClick = onClick)
+                    ).clickable(onClickLabel = clickLabel(expanded), onClick = onClick)
                     .onSecondaryClick { menuOpen = true }
                     // Every row is the same height whatever it holds: the tree used to have two rhythms,
                     // because rows with a delete button grew to Material's minimum touch target.
                     .height(Dimens.TreeRowHeight)
+                    // The tree shows a repository's name and so does the action panel below it, so a
+                    // test (and a reader of the semantics tree) needs a way to say "the row".
+                    .testTag(TREE_ROW_TAG)
                     .padding(start = Dimens.Gutter + Dimens.TreeIndentPerLevel * depth),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -98,22 +110,14 @@ internal fun NoteTreeRow(
                     Modifier
                         .width(Dimens.TreeChevronWidth)
                         .fillMaxHeight()
-                        .then(
-                            if (chevron == null) {
-                                Modifier
-                            } else {
-                                Modifier
-                                    // Named rather than described by a glyph: a drawn triangle has no
-                                    // text for a screen reader (or a test) to match on.
-                                    .semantics {
-                                        contentDescription = if (chevron.expanded) "Collapse" else "Expand"
-                                    }.clickable(onClick = chevron.onToggle)
-                            },
-                        ),
+                        // Indicator only: no gesture, no hover overlay, nothing to press. The row owns the
+                        // toggle, so the space beside a label reads as part of the row rather than as a
+                        // button sitting inside it.
+                        .semantics { if (expanded != null) stateDescription = if (expanded) "Expanded" else "Collapsed" },
                 contentAlignment = Alignment.Center,
             ) {
-                if (chevron != null) {
-                    ChevronIcon(expanded = chevron.expanded)
+                if (expanded != null) {
+                    ChevronIcon(expanded = expanded)
                 }
             }
 
@@ -211,3 +215,6 @@ private fun Modifier.onSecondaryClick(action: () -> Unit): Modifier =
             }
         }
     }
+
+/** Marks a tree row for tests, so a label that also appears elsewhere cannot be mistaken for it. */
+internal const val TREE_ROW_TAG: String = "tree-row"
