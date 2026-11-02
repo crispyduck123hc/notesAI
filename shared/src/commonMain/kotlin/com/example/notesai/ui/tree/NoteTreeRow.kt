@@ -82,6 +82,15 @@ internal fun NoteTreeRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
+    // The background and the text colour are a pair. Painting one without the other is what made a selected
+    // row dark purple with black text on it.
+    val contentColour =
+        if (selected) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+
     Box {
         Row(
             modifier =
@@ -117,12 +126,13 @@ internal fun NoteTreeRow(
                 contentAlignment = Alignment.Center,
             ) {
                 if (expanded != null) {
-                    ChevronIcon(expanded = expanded)
+                    ChevronIcon(expanded = expanded, tint = contentColour)
                 }
             }
 
             Text(
                 text = label,
+                color = contentColour,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -157,9 +167,7 @@ internal fun NoteTreeRow(
                             .clickable(onClickLabel = deleteLabel, onClick = onDelete),
                     contentAlignment = Alignment.Center,
                 ) {
-                    CrossIcon(
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    CrossIcon(tint = contentColour)
                 }
             }
         }

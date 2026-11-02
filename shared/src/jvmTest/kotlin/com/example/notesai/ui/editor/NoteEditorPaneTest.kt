@@ -319,4 +319,53 @@ class NoteEditorPaneTest {
 
             onNode(hasSetTextAction()).assertTextEquals(drawn("milk" + INDENT_UNIT))
         }
+
+    @Test
+    fun theDashButtonMakesADashListInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("Dash list", substring = true).performClick()
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + DASH_MARKER + "shopping"))
+        }
+
+    @Test
+    fun typingHyphenSpaceInTheRealFieldMakesADashList() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("-")
+            onNode(hasSetTextAction()).performTextInput(" ")
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + DASH_MARKER))
+        }
+
+    @Test
+    fun enterInTheRealFieldContinuesADashList() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = DASH_MARKER + "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(DASH_MARKER + "milk\n" + DASH_MARKER))
+        }
 }
