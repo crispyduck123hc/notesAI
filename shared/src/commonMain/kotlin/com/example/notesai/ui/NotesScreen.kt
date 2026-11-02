@@ -260,9 +260,15 @@ internal fun NotesScreen(
                 ),
             onToggle = { id -> expanded = if (id in expanded) expanded - id else expanded + id },
             onSelectFolder = { selectedFolderId = it },
-            onSelectNote = { item ->
-                item.ref?.let { selectedRef = it }
-                selectedFolderId = item.parentFolderId
+            // Each kind says exactly which folder context comes with it, so there is no row whose
+            // selection has to be interpreted.
+            onSelectNote = { note ->
+                selectedRef = note.ref
+                selectedFolderId = note.folderId
+            },
+            onSelectIssue = { issue ->
+                selectedRef = issue.ref
+                selectedFolderId = issue.parentNodeId
             },
             onDeleteFolder = { id ->
                 // Clear selection if the open local note or active folder is being removed.
