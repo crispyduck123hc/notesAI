@@ -7,15 +7,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 const val BULLET_MARKER = "\u2022 "
 
 /**
- * One step of indentation, as a real tab.
- *
- * A tab rather than spaces because that is what the Tab key produces and what a plain-text note should
- * contain, and because the editor draws it at a fixed width ([TAB_COLUMNS]) instead of the narrow space
- * Compose gives a `\t` by default. Change it to `"  "` to indent with spaces instead.
- */
-const val INDENT_UNIT = "\t"
-
-/**
  * The indent a created bullet gets: one [INDENT_UNIT].
  *
  * Bullets sit one step in from the text they belong to, which is also what gives a tree of nested
@@ -112,23 +103,6 @@ fun applyEditorTyping(
     promoteListShortcut(previous, current)
         ?: endListOnMarkerSpaceDeletion(previous, current)
         ?: continueBullets(previous, current)
-
-/**
- * Inserts one [INDENT_UNIT] at the caret, replacing any selection — what Tab does.
- *
- * The selection is replaced rather than merely collapsed, so indenting a whole line works by selecting
- * it first, which is what people expect from an indent key.
- */
-fun indentAtCaret(value: TextFieldValue): TextFieldValue {
-    val text = value.text
-    val start = value.selection.min.coerceIn(0, text.length)
-    val end = value.selection.max.coerceIn(0, text.length)
-    return value.copy(
-        text = text.substring(0, start) + INDENT_UNIT + text.substring(end),
-        selection = TextRange(start + INDENT_UNIT.length),
-        composition = null,
-    )
-}
 
 /**
  * Ends the list when the space after its marker is deleted.

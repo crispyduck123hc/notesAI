@@ -238,8 +238,8 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).performClick()
             onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Tab) }
 
-            // A tab character, drawn four columns wide. (A click puts the caret at the end, so an empty
-            // note is the case without ambiguity about where the indent lands.)
+            // A tab character at the caret, drawn four columns wide. (A click puts the caret at the end,
+            // so an empty note is the case without ambiguity about where it lands.)
             onNode(hasSetTextAction()).assertTextEquals(drawn(INDENT_UNIT))
         }
 
@@ -260,5 +260,63 @@ class NoteEditorPaneTest {
             // Deleting the space removed the marker and its indent too, so the field is empty: the
             // placeholder is back, which is the visible sign of it.
             onNodeWithText("First line becomes the title\u2026").assertExists()
+        }
+
+    @Test
+    fun shiftTabOutdentsInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + INDENT_UNIT + BULLET_MARKER + "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput {
+                keyDown(Key.ShiftLeft)
+                pressKey(Key.Tab)
+                keyUp(Key.ShiftLeft)
+            }
+
+            // One of the two indents gone, whatever column the caret happened to be in.
+            onNode(hasSetTextAction()).assertTextEquals(drawn(INDENT_UNIT + BULLET_MARKER + "milk"))
+        }
+
+    @Test
+    fun shiftTabOnAnUnindentedLineLeavesItAlone() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput {
+                keyDown(Key.ShiftLeft)
+                pressKey(Key.Tab)
+                keyUp(Key.ShiftLeft)
+            }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn("milk"))
+        }
+
+    @Test
+    fun tabInTheMiddleOfALineInsertsThere() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
+                    onChange = {},
+                )
+            }
+
+            // A click leaves the caret at the end of the text, which is already "not the line start".
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Tab) }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn("milk" + INDENT_UNIT))
         }
 }
