@@ -368,4 +368,54 @@ class NoteEditorPaneTest {
 
             onNode(hasSetTextAction()).assertTextEquals(drawn(DASH_MARKER + "milk\n" + DASH_MARKER))
         }
+
+    @Test
+    fun theNumberedButtonStartsANumberedListInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "step"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNodeWithText("Numbered list", substring = true).performClick()
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + NUMBERED_MARKER + "step"))
+        }
+
+    @Test
+    fun typingNumberDotSpaceInTheRealFieldMakesANumberedList() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("3")
+            onNode(hasSetTextAction()).performTextInput(".")
+            onNode(hasSetTextAction()).performTextInput(" ")
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + "3. "))
+        }
+
+    @Test
+    fun enterInTheRealFieldAdvancesTheNumber() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = NUMBERED_MARKER + "step"),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals(drawn(NUMBERED_MARKER + "step\n" + "2. "))
+        }
 }
