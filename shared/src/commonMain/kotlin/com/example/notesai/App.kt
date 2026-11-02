@@ -29,6 +29,7 @@ import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
+import com.example.notesai.sync.REQUEST_TIMEOUT_MILLIS
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.NotesScreen
 import com.example.notesai.ui.openInBrowser
@@ -36,6 +37,7 @@ import com.example.notesai.ui.theme.NotesAiTheme
 import com.example.notesai.update.AvailableUpdate
 import com.example.notesai.update.UpdateChecker
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -49,6 +51,15 @@ private const val PUSH_SETTLE_MILLIS = 1 * 60_000L
 
 /** How often to look for changes made on other devices while the app is open. */
 private const val PERIODIC_SYNC_MILLIS = 60_000L
+
+/**
+ * How long one HTTP request may take before it is abandoned.
+ *
+ * Explicit rather than the library's defaults, because the shutdown flush has a ceiling of its own and it has
+ * to be longer than this: a flush should be cancelled *between* requests, never in the middle of an upload the
+ * server may already have accepted.
+ */
+private const val REQUEST_TIMEOUT_MILLIS = 10_000L
 
 private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
@@ -71,7 +82,20 @@ fun App(
     // Mobile has no equivalent hook, so the default is simply never used there.
     exitFlush: ExitFlush = remember { ExitFlush() },
 ) {
-    val http = remember { HttpClient() }
+    // Explicit timeouts rather than the defaults: the shutdown flush has a ceiling of its own, and it has to
+    // be longer than these so a flush is cancelled *between* requests rather than in the middle of an upload
+    // the server may already have accepted. A half-finished write is what leaves the next launch unsure
+    // whether a note reached Drive, and that uncertainty is what turned into duplicate notes.
+    val http =
+        remember {
+            HttpClient {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+                    connectTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+                    socketTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+                }
+            }
+        }
     val auth =
         remember(http, tokenStore) {
             GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
@@ -225,13 +249,16 @@ private fun AccountNotes(
     var syncError by remember(scopeName) { mutableStateOf(signInWarning) }
     var syncing by remember(scopeName) { mutableStateOf(false) }
 
-    suspend fun runSync(pushSettleMillis: Long = PUSH_SETTLE_MILLIS) {
+    suspend fun runSync(
+        pushSettleMillis: Long = PUSH_SETTLE_MILLIS,
+        deadlineMillis: Long? = null,
+    ) {
         syncing = true
         if (accountMismatch) {
             syncStatus = ACCOUNT_MISMATCH_MESSAGE
             syncError = null
         } else {
-            val outcome = describeSync(syncEngine, repository, pushSettleMillis)
+            val outcome = describeSync(syncEngine, repository, pushSettleMillis, deadlineMillis)
             syncStatus = outcome.summary
             syncError = outcome.error
         }
@@ -243,7 +270,7 @@ private fun AccountNotes(
     DisposableEffect(scopeName) {
         exitFlush.register(
             pendingCount = { repository.pendingOutbox().size },
-            flush = { runSync(pushSettleMillis = 0L) },
+            flush = { deadline -> runSync(pushSettleMillis = 0L, deadlineMillis = deadline) },
         )
         onDispose {
             exitFlush.unregister()
@@ -325,10 +352,11 @@ private suspend fun describeSync(
     engine: NoteSyncEngine,
     repository: NoteRepository,
     pushSettleMillis: Long,
+    deadlineMillis: Long? = null,
 ): SyncOutcome {
     val result =
         try {
-            engine.sync(pushSettleMillis = pushSettleMillis)
+            engine.sync(pushSettleMillis = pushSettleMillis, deadlineMillis = deadlineMillis)
         } catch (t: Throwable) {
             val detail = t.message ?: t.toString()
             // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the

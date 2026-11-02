@@ -14,12 +14,12 @@ package com.example.notesai
  */
 class ExitFlush {
     private var pendingCount: () -> Int = { 0 }
-    private var flush: suspend () -> Unit = {}
+    private var flush: suspend (deadlineMillis: Long?) -> Unit = {}
 
     /** Called by the signed-in screen to offer itself as the thing to drain. */
     fun register(
         pendingCount: () -> Int,
-        flush: suspend () -> Unit,
+        flush: suspend (deadlineMillis: Long?) -> Unit,
     ) {
         this.pendingCount = pendingCount
         this.flush = flush
@@ -34,7 +34,13 @@ class ExitFlush {
     /** Whether it is worth keeping the process alive for a moment. */
     fun hasQueuedWork(): Boolean = pendingCount() > 0
 
-    suspend fun run() {
-        flush()
+    /**
+     * Drains the queue, giving up on anything it cannot finish before [deadlineMillis].
+     *
+     * The engine skips a pass outright when the time left is shorter than one request, so passing the deadline
+     * here is what keeps a flush from starting an upload it would be killed in the middle of.
+     */
+    suspend fun run(deadlineMillis: Long? = null) {
+        flush(deadlineMillis)
     }
 }
