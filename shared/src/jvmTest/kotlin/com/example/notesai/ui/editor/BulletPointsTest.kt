@@ -68,4 +68,120 @@ class BulletPointsTest {
 
         assertEquals("\u2022 - dashed", result.text)
     }
+
+    // ---- Enter: continue the bullet, or end the list on an empty one ----------------------------
+
+    /** What the field would produce for a Return press before [continueBullets] sees it. */
+    private fun typedEnter(
+        text: String,
+        caret: Int = text.length,
+    ): Pair<TextFieldValue, TextFieldValue> {
+        val before = value(text, caret = caret)
+        val after = before.copy(text = text.substring(0, caret) + "\n" + text.substring(caret), selection = TextRange(caret + 1))
+        return before to after
+    }
+
+    private fun enterResult(
+        text: String,
+        caret: Int = text.length,
+    ): TextFieldValue {
+        val (before, after) = typedEnter(text, caret)
+        return continueBullets(before, after)
+    }
+
+    @Test
+    fun enterOnABulletLineStartsTheNextBullet() {
+        val result = enterResult("\u2022 milk")
+
+        assertEquals("\u2022 milk\n\u2022 ", result.text)
+        assertEquals("\u2022 milk\n\u2022 ".length, result.selection.start, "the caret sits after the new marker")
+    }
+
+    @Test
+    fun enterOnAnEmptyBulletEndsTheList() {
+        val result = enterResult("\u2022 ")
+
+        assertEquals("", result.text, "the marker goes, and the newline it would have added with it")
+        assertEquals(0, result.selection.start)
+    }
+
+    @Test
+    fun endingTheListKeepsTheLinesAroundIt() {
+        val result = enterResult("\u2022 milk\n\u2022 ")
+
+        assertEquals("\u2022 milk\n", result.text)
+        assertEquals("\u2022 milk\n".length, result.selection.start)
+    }
+
+    @Test
+    fun aBulletWithOnlySpacesCountsAsEmpty() {
+        assertEquals("", enterResult("\u2022   ").text)
+    }
+
+    @Test
+    fun enterOnAPlainLineIsLeftToTheEditor() {
+        val (before, after) = typedEnter("shopping list")
+
+        assertEquals(after, continueBullets(before, after), "no bullet, no opinion")
+        assertEquals("shopping list\n", continueBullets(before, after).text)
+    }
+
+    @Test
+    fun indentedBulletsKeepTheirIndentation() {
+        val result = enterResult("  \u2022 milk")
+
+        assertEquals("  \u2022 milk\n  \u2022 ", result.text)
+    }
+
+    @Test
+    fun anIndentedEmptyBulletLosesItsWholePrefix() {
+        // Deliberate: the indent was typed by hand, so outdenting "one level" would mean guessing an
+        // indent width. One Return leaves a blank line wherever the bullet was.
+        val result = enterResult("    \u2022 ")
+
+        assertEquals("", result.text)
+    }
+
+    @Test
+    fun splittingABulletLineCarriesTheBulletToTheNewLine() {
+        // "• mi|lk" + Enter -> the tail becomes its own item.
+        val result = enterResult("\u2022 milk", caret = 4)
+
+        assertEquals("\u2022 mi\n\u2022 lk", result.text)
+        assertEquals("\u2022 mi\n\u2022 ".length, result.selection.start)
+    }
+
+    @Test
+    fun aCaretInsideTheMarkerDoesNotMintABullet() {
+        val (before, after) = typedEnter("\u2022 milk", caret = 0)
+
+        assertEquals(after, continueBullets(before, after), "the line is split before the bullet, which is just a newline")
+    }
+
+    @Test
+    fun pastingIsNotMistakenForEnter() {
+        // A three-character insertion, and a multi-line paste: neither is a Return press.
+        val before = value("abc", caret = 3)
+        val pasted = before.copy(text = "abc\nxyz", selection = TextRange(7))
+        assertEquals(pasted, continueBullets(before, pasted))
+
+        val multiline = before.copy(text = "abc\n\nmilk", selection = TextRange(10))
+        assertEquals(multiline, continueBullets(before, multiline))
+    }
+
+    @Test
+    fun aReplacementIsNotMistakenForEnter() {
+        val before = value("\u2022 milk", caret = 0).copy(selection = TextRange(0, 8))
+        val replaced = before.copy(text = "\n", selection = TextRange(1))
+
+        assertEquals(replaced, continueBullets(before, replaced))
+    }
+
+    @Test
+    fun textArrivingMidCompositionIsLeftAlone() {
+        val (before, after) = typedEnter("\u2022 milk")
+        val composing = after.copy(composition = TextRange(0, 1))
+
+        assertEquals(composing, continueBullets(before, composing))
+    }
 }

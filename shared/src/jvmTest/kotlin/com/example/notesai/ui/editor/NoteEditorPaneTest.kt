@@ -3,12 +3,15 @@ package com.example.notesai.ui.editor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.model.NoteRef
@@ -144,5 +147,38 @@ class NoteEditorPaneTest {
             onNodeWithText("\u2022 Bullet").performClick()
 
             onNode(hasSetTextAction()).assertTextEquals("shopping")
+        }
+
+    @Test
+    fun enterContinuesABulletInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk"),
+                    onChange = {},
+                )
+            }
+
+            // Caret at the end of the line, then a real Return through the field's input path.
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals("\u2022 milk\n\u2022 ")
+        }
+
+    @Test
+    fun enterOnAnEmptyBulletEndsTheListInTheRealField() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk\n\u2022 "),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals("\u2022 milk\n")
         }
 }

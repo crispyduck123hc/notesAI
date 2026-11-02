@@ -133,13 +133,16 @@ internal fun NoteEditorPane(
             TextButton(
                 onClick = { textState.value = toggleBullet(textState.value) },
             ) {
-                Text("\u2022 Bullet")
+                Text("\u2022")
             }
         }
 
         OutlinedTextField(
             value = textState.value,
-            onValueChange = { textState.value = it },
+            // Enter continues a bullet, or ends the list on an empty one. Done as part of the value
+            // change rather than as a key event, so a soft keyboard on Android behaves the same as a
+            // hardware Return here.
+            onValueChange = { textState.value = continueBullets(textState.value, it) },
             // The first line is a title only for local notes; an issue's body is just a body.
             visualTransformation =
                 if (completion == null) TitleHeaderTransformation else VisualTransformation.None,
