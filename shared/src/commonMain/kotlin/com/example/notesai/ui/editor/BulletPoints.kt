@@ -7,39 +7,99 @@ import androidx.compose.ui.text.input.TextFieldValue
 const val BULLET_MARKER = "\u2022 "
 
 /**
+ * The indent a created bullet gets.
+ *
+ * Bullets sit one step in from the text they belong to, which is also what gives the tree of nested
+ * bullets something to nest *within*. It is a string rather than a width because the note is plain
+ * text: whatever this is, it is what gets written. Empty it to have bullets flush with the margin.
+ */
+const val BULLET_INDENT = "  "
+
+/**
+ * What you can type to get a list marker, and what it becomes.
+ *
+ * One entry today; dash, numbered and check lists are meant to arrive next, and each of those is a line
+ * here plus a marker constant rather than another branch in the editor. The typed key is matched
+ * against the text between the line's indent and the caret, so indenting by hand still works.
+ */
+private val LIST_SHORTCUTS: List<Pair<String, String>> = listOf("*" to BULLET_MARKER)
+
+/**
  * Adds or removes a bullet at the start of the line the caret is on.
  *
  * Bullets are a convention of the text, not a structure the database knows about — a note is a string,
  * and it syncs as a string. So this only edits characters, which is also why the caret has to be moved
- * by hand: inserting at the line start would otherwise leave the cursor before the bullet.
+ * by hand: inserting at the line start would otherwise leave the cursor before the marker.
  *
- * Deliberately single-line: with a selection spanning several lines there is no obviously right answer
- * for lines that are already bulleted, so this acts on the line the selection starts on.
+ * A new bullet arrives with [BULLET_INDENT], and removing one takes the indent with it, so toggling is
+ * symmetric however deep the line already was. Deliberately single-line: with a selection spanning
+ * several lines there is no obviously right answer for lines that are already bulleted, so this acts on
+ * the line the selection starts on.
  */
 fun toggleBullet(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val caret = value.selection.start.coerceIn(0, text.length)
-    val lineStart = text.lastIndexOf('\n', caret - 1).let { if (it == -1) 0 else it + 1 }
+    val lineStart = lineStartOf(text, caret)
+    val markerStart = firstNonSpaceOf(text, lineStart)
 
-    return if (text.startsWith(BULLET_MARKER, lineStart)) {
-        val withoutBullet = text.removeRange(lineStart, lineStart + BULLET_MARKER.length)
-        // Move the caret back by however much of the marker was before it.
-        val shift = minOf(BULLET_MARKER.length, caret - lineStart)
-        value.copy(
-            text = withoutBullet,
-            selection = TextRange(caret - shift),
-            // A composition stops making sense once the text is changed under it.
-            composition = null,
-        )
-    } else {
-        val withBullet = text.substring(0, lineStart) + BULLET_MARKER + text.substring(lineStart)
-        value.copy(
-            text = withBullet,
-            selection = TextRange(caret + BULLET_MARKER.length),
+    if (text.startsWith(BULLET_MARKER, markerStart)) {
+        // The indent belongs to the bullet: leaving it behind would leave a line of stray spaces.
+        val markerEnd = markerStart + BULLET_MARKER.length
+        val removed = markerEnd - lineStart
+        return value.copy(
+            text = text.removeRange(lineStart, markerEnd),
+            selection = TextRange((caret - removed).coerceAtLeast(lineStart)),
             composition = null,
         )
     }
+
+    val indent = text.substring(lineStart, markerStart).ifEmpty { BULLET_INDENT }
+    val inserted = indent + BULLET_MARKER
+    return value.copy(
+        text = text.substring(0, lineStart) + inserted + text.substring(lineStart),
+        selection = TextRange(caret + inserted.length),
+        composition = null,
+    )
 }
+
+/**
+ * Turns a typed shortcut into a list marker: `*` then a space at the start of a line becomes a bullet.
+ *
+ * Returns null when the edit was not a space typed directly after a shortcut, so the caller can fall
+ * through to its other handling. The check is deliberately narrow — one character inserted, at the
+ * caret, with nothing but the shortcut before it on the line — because anything looser would fire while
+ * pasting text or mid-word.
+ */
+@Suppress("ReturnCount") // the same "not this case, no opinion" shape as continueBullets
+fun promoteListShortcut(
+    previous: TextFieldValue,
+    current: TextFieldValue,
+): TextFieldValue? {
+    val caret = singleInsertionAt(previous, current, ' ') ?: return null
+    val text = previous.text
+    val lineStart = lineStartOf(text, caret)
+    val markerStart = firstNonSpaceOf(text, lineStart)
+    val typed = text.substring(markerStart, caret)
+    val marker = LIST_SHORTCUTS.firstOrNull { (key, _) -> key == typed }?.second ?: return null
+
+    // An indent the user typed is kept; otherwise the bullet brings its own.
+    val indent = text.substring(lineStart, markerStart).ifEmpty { BULLET_INDENT }
+    val replacement = indent + marker
+    return previous.copy(
+        text = text.substring(0, lineStart) + replacement + text.substring(caret),
+        selection = TextRange(lineStart + replacement.length),
+        composition = null,
+    )
+}
+
+/**
+ * Everything the editor does to a value change in one place: the `*` shortcut, Return continuing a
+ * bullet, and Return on an empty bullet ending the list.
+ */
+fun applyBulletTyping(
+    previous: TextFieldValue,
+    current: TextFieldValue,
+): TextFieldValue = promoteListShortcut(previous, current) ?: continueBullets(previous, current)
 
 /**
  * Continues a bullet when Enter is pressed, and ends the list when the bullet is empty.
@@ -62,7 +122,7 @@ fun continueBullets(
     previous: TextFieldValue,
     current: TextFieldValue,
 ): TextFieldValue {
-    val caret = singleNewlineInsertionAt(previous, current) ?: return current
+    val caret = singleInsertionAt(previous, current, '\n') ?: return current
     val text = previous.text
     val lineStart = lineStartOf(text, caret)
     val markerStart = firstNonSpaceOf(text, lineStart)
@@ -96,26 +156,27 @@ fun continueBullets(
 }
 
 /**
- * The index where exactly one newline was inserted at the caret, or null if this was any other edit.
+ * Where [character] was inserted, or null if this was any other edit.
  *
  * Precise on purpose: a stricter test than "the text grew" is what keeps a paste of several lines, or
- * a selection being replaced, from being mistaken for a Return press.
+ * a selection being replaced, from being mistaken for a single keystroke.
  */
-private fun singleNewlineInsertionAt(
+private fun singleInsertionAt(
     previous: TextFieldValue,
     current: TextFieldValue,
+    character: Char,
 ): Int? {
     val caret = previous.selection.start
-    val insertedOneNewlineAtTheCaret =
+    val insertedOneCharacterAtTheCaret =
         previous.composition == null &&
             current.composition == null &&
             previous.selection.collapsed &&
             caret in 0..previous.text.length &&
             current.text.length == previous.text.length + 1 &&
-            current.text.getOrNull(caret) == '\n' &&
+            current.text.getOrNull(caret) == character &&
             current.text.take(caret) == previous.text.take(caret) &&
             current.text.drop(caret + 1) == previous.text.drop(caret)
-    return caret.takeIf { insertedOneNewlineAtTheCaret }
+    return caret.takeIf { insertedOneCharacterAtTheCaret }
 }
 
 private fun lineStartOf(

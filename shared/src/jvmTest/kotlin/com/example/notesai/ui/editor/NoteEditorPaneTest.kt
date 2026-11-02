@@ -127,9 +127,9 @@ class NoteEditorPaneTest {
 
             // Put the caret at the start of the line, then use the toolbar.
             onNode(hasSetTextAction()).performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
 
-            onNode(hasSetTextAction()).assertTextEquals("\u2022 shopping")
+            onNode(hasSetTextAction()).assertTextEquals(BULLET_INDENT + BULLET_MARKER + "shopping")
         }
 
     @Test
@@ -143,8 +143,8 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
-            onNodeWithText("\u2022 Bullet").performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
+            onNodeWithText("Bullet", substring = true).performClick()
 
             onNode(hasSetTextAction()).assertTextEquals("shopping")
         }
@@ -180,5 +180,42 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
 
             onNode(hasSetTextAction()).assertTextEquals("\u2022 milk\n")
+        }
+
+    @Test
+    fun typingStarSpaceInTheRealFieldMakesABullet() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("*")
+            onNode(hasSetTextAction()).performTextInput(" ")
+
+            // The two characters became one bullet, so the next thing typed is a list item.
+            onNode(hasSetTextAction()).assertTextEquals(BULLET_INDENT + BULLET_MARKER)
+        }
+
+    @Test
+    fun typingStarSpaceThenTextThenEnterStartsTheNextBullet() =
+        runComposeUiTest {
+            setContent {
+                NoteEditorPane(
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
+                    onChange = {},
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("*")
+            onNode(hasSetTextAction()).performTextInput(" ")
+            onNode(hasSetTextAction()).performTextInput("milk")
+            onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
+
+            onNode(hasSetTextAction()).assertTextEquals(BULLET_INDENT + BULLET_MARKER + "milk\n" + BULLET_INDENT + BULLET_MARKER)
         }
 }

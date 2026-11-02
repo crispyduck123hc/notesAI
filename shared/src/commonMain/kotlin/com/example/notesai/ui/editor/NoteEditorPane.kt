@@ -139,10 +139,10 @@ internal fun NoteEditorPane(
 
         OutlinedTextField(
             value = textState.value,
-            // Enter continues a bullet, or ends the list on an empty one. Done as part of the value
-            // change rather than as a key event, so a soft keyboard on Android behaves the same as a
-            // hardware Return here.
-            onValueChange = { textState.value = continueBullets(textState.value, it) },
+            // Typing "\* " makes a bullet, Enter continues one, and Enter on an empty bullet ends the
+            // list. Done as part of the value change rather than as key events, so a soft keyboard on
+            // Android behaves the same as a hardware Return here.
+            onValueChange = { textState.value = applyBulletTyping(textState.value, it) },
             // The first line is a title only for local notes; an issue's body is just a body.
             visualTransformation =
                 if (completion == null) TitleHeaderTransformation else VisualTransformation.None,
