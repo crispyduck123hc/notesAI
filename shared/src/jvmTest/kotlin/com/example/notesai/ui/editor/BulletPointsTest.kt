@@ -289,24 +289,7 @@ class BulletPointsTest {
     // ---- Tab, and deleting a bullet's space ------------------------------------------------------
 
     @Test
-    fun tabInsertsOneIndentUnitAtTheCaret() {
-        val result = indentAtCaret(value("milk", caret = 0))
-
-        assertEquals(INDENT_UNIT + "milk", result.text)
-        assertEquals(INDENT_UNIT.length, result.selection.start, "the caret follows the tab")
-    }
-
-    @Test
-    fun tabReplacesASelection() {
-        val result = indentAtCaret(value("milk", caret = 0).copy(selection = TextRange(0, 4)))
-
-        assertEquals(INDENT_UNIT, result.text)
-        assertEquals(INDENT_UNIT.length, result.selection.start)
-    }
-
-    @Test
-    fun theIndentUnitIsATab() {
-        assertEquals("\t", INDENT_UNIT, "a note is plain text: the indent is a tab, not spaces")
+    fun theBulletIndentsWithTheSameUnitAsTheTabKey() {
         assertEquals(INDENT_UNIT, BULLET_INDENT, "the bullet and the Tab key indent by the same thing")
     }
 

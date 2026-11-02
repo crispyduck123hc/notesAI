@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -153,12 +154,20 @@ internal fun NoteEditorPane(
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(Dimens.EditorPadding)
-                    // Tab indents instead of moving focus. The field would otherwise let the key travel
-                    // to the focus manager, which is why an indent was impossible to type.
+                    // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
+                    // otherwise let the key travel to the focus manager, which is why an indent was
+                    // impossible to type.
                     .onPreviewKeyEvent { event ->
-                        val indents = event.key == Key.Tab && event.type == KeyEventType.KeyDown
-                        if (indents) textState.value = indentAtCaret(textState.value)
-                        indents
+                        val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
+                        if (indentKey) {
+                            textState.value =
+                                if (event.isShiftPressed) {
+                                    outdentAtCaret(textState.value)
+                                } else {
+                                    indentAtCaret(textState.value)
+                                }
+                        }
+                        indentKey
                     },
         )
     }
