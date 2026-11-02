@@ -100,6 +100,41 @@ fun promoteListShortcut(
 }
 
 /**
+ * Ticks or unticks the checklist item on the caret's line.
+ *
+ * Apple's Notes has you tap the circle, and every Markdown editor with task lists has a command for it (Markdown
+ * All in One binds `Alt+C`). A plain text field cannot tell which character was clicked without re-implementing its
+ * hit testing, so the action lives on the caret's line instead — the toolbar button and Ctrl+Enter both call this.
+ *
+ * Refuses an item with no text: a tick on nothing is a tick that means nothing, and it is also how an accidental
+ * keypress would silently turn a blank line into a completed task.
+ *
+ * Returns the value unchanged when the line is not a checklist item or the item is empty.
+ */
+@Suppress("ReturnCount") // three early exits, each one a distinct reason to do nothing
+fun toggleChecklistState(value: TextFieldValue): TextFieldValue {
+    val text = value.text
+    val caret = value.selection.start.coerceIn(0, text.length)
+    val lineStart = lineStartOf(text, caret)
+    val markerStart = firstNonSpaceOf(text, lineStart)
+    val marker = parseMarker(text, markerStart) ?: return value
+    if (marker.kind != ListKind.CHECKLIST) return value
+
+    val markerEnd = markerStart + marker.text.length
+    val lineEnd = text.indexOf('\n', markerEnd).let { if (it == -1) text.length else it }
+    // Nothing to tick.
+    if (text.substring(markerEnd, lineEnd).isBlank()) return value
+
+    val replacement = if (marker.checked) CHECKLIST_OPEN else CHECKLIST_DONE
+    val shift = replacement.length - marker.text.length
+    return value.copy(
+        text = text.substring(0, markerStart) + replacement + text.substring(markerEnd),
+        selection = TextRange((caret + shift).coerceAtLeast(markerStart + replacement.length)),
+        composition = null,
+    )
+}
+
+/**
  * Everything the editor does to a value change in one place: the shortcuts, Return continuing a list, Return on an
  * empty item ending it, and deleting an item's space ending it as well.
  */

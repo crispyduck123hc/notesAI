@@ -544,4 +544,107 @@ class ListEditingTest {
         assertEquals("- 1. milk\n- ", enterResult("- 1. milk").text)
         assertEquals("1. - milk\n2. ", enterResult("1. - milk").text)
     }
+
+    // ---- Checklists: continuable, removable, tickable --------------------------------------------
+
+    private val newChecklist = BULLET_INDENT + CHECKLIST_OPEN
+
+    @Test
+    fun theChecklistButtonStartsAnOpenItem() {
+        val result = toggleList(kind = ListKind.CHECKLIST, value = value("milk", caret = 4))
+
+        assertEquals(newChecklist + "milk", result.text)
+    }
+
+    @Test
+    fun theChecklistButtonRemovesAnItemToo() {
+        val once = toggleList(kind = ListKind.CHECKLIST, value = value("milk", caret = 4))
+
+        assertEquals("milk", toggleList(kind = ListKind.CHECKLIST, value = once).text)
+    }
+
+    @Test
+    fun tickingAnItemMarksItDone() {
+        val item = value(CHECKLIST_OPEN + "milk", caret = CHECKLIST_OPEN.length + 2)
+
+        assertEquals(CHECKLIST_DONE + "milk", toggleChecklistState(item).text)
+    }
+
+    @Test
+    fun tickingAgainReopensIt() {
+        val done = value(CHECKLIST_DONE + "milk", caret = CHECKLIST_DONE.length)
+
+        assertEquals(CHECKLIST_OPEN + "milk", toggleChecklistState(done).text)
+    }
+
+    @Test
+    fun anEmptyItemCannotBeTicked() {
+        // Apple's circle can be tapped on an empty item; here the action is on the line, so refusing is what keeps a
+        // stray Ctrl+Enter from turning a blank line into a completed task.
+        val empty = value(CHECKLIST_OPEN, caret = CHECKLIST_OPEN.length)
+
+        assertEquals(empty, toggleChecklistState(empty))
+        assertEquals(CHECKLIST_OPEN, toggleChecklistState(empty).text, "not ticked")
+    }
+
+    @Test
+    fun tickingIsRefusedOutsideAChecklist() {
+        val bullet = value(BULLET_MARKER + "milk", caret = 4)
+        val prose = value("plain text", caret = 5)
+
+        assertEquals(bullet, toggleChecklistState(bullet), "a bullet is not a task")
+        assertEquals(prose, toggleChecklistState(prose), "and neither is prose")
+    }
+
+    @Test
+    fun enterContinuesAChecklistWithAnOpenItem() {
+        assertEquals("[ ] milk\n[ ] ", enterResult(CHECKLIST_OPEN + "milk").text)
+    }
+
+    @Test
+    fun enterAfterATickedItemStillGivesAnOpenItem() {
+        // The next thing to do is not done yet — the ticked line above it stays ticked.
+        assertEquals("[x] milk\n[ ] ", enterResult(CHECKLIST_DONE + "milk").text)
+    }
+
+    @Test
+    fun enterOnAnEmptyChecklistItemEndsTheList() {
+        assertEquals("", enterResult(CHECKLIST_OPEN).text)
+    }
+
+    @Test
+    fun deletingTheSpaceAfterAChecklistEndsIt() {
+        val (before, after) = deleted(INDENT_UNIT + CHECKLIST_OPEN + "milk", index = INDENT_UNIT.length + 3)
+
+        assertEquals("milk", endListOnMarkerSpaceDeletion(before, after)?.text)
+    }
+
+    @Test
+    fun aChecklistIsRecognisedEvenWhenTicked() {
+        // The space-deletion rule reads the marker from the line, so a ticked item is still a checklist item.
+        val (before, after) = deleted(CHECKLIST_DONE + "milk", index = 3)
+
+        assertEquals("milk", endListOnMarkerSpaceDeletion(before, after)?.text)
+    }
+
+    @Test
+    fun thereIsNoTypedShortcutForAChecklist() {
+        // Deliberate: in a plain-text editor "- [ ] " collides with the dash shortcut, and "[" is too common in
+        // prose to promote. The toolbar button is how a checklist starts.
+        val (bracketBefore, bracketAfter) = typed("[", ' ')
+        assertNull(promoteListShortcut(bracketBefore, bracketAfter))
+
+        val (pairBefore, pairAfter) = typed("[]", ' ')
+        assertNull(promoteListShortcut(pairBefore, pairAfter))
+    }
+
+    @Test
+    fun convertingAListToAChecklistStartsUnticked() {
+        val result = toggleList(kind = ListKind.CHECKLIST, value = value(CHECKLIST_DONE + "milk", caret = 8))
+        // Already a checklist, so this removes it rather than converting; converting a bullet does the work.
+        assertEquals("milk", result.text)
+
+        val fromBullet = toggleList(kind = ListKind.CHECKLIST, value = value(BULLET_MARKER + "milk", caret = 7))
+        assertEquals(CHECKLIST_OPEN + "milk", fromBullet.text)
+    }
 }

@@ -9,6 +9,10 @@ const val DASH_MARKER = "- "
 /** Where a numbered list starts, and what the toolbar button writes. */
 const val NUMBERED_MARKER = "1. "
 
+/** A checklist item still to do, and one already done. */
+const val CHECKLIST_OPEN = "[ ] "
+const val CHECKLIST_DONE = "[x] "
+
 /**
  * A kind of list this editor understands.
  *
@@ -20,6 +24,7 @@ enum class ListKind {
     BULLET,
     DASH,
     NUMBERED,
+    CHECKLIST,
     ;
 
     companion object {
@@ -29,6 +34,8 @@ enum class ListKind {
                 BULLET -> BULLET_MARKER
                 DASH -> DASH_MARKER
                 NUMBERED -> NUMBERED_MARKER
+                // A new item is always something still to do.
+                CHECKLIST -> CHECKLIST_OPEN
             }
     }
 }
@@ -43,6 +50,8 @@ enum class ListKind {
 internal data class ListMarker(
     val kind: ListKind,
     val text: String,
+    /** Only meaningful for [ListKind.CHECKLIST]; a ticked item is written `[x] ` rather than `[ ] `. */
+    val checked: Boolean = false,
 ) {
     /** Just the visible part, for the state left behind when the space after it is deleted. */
     val glyph: String get() = text.trimEnd()
@@ -51,6 +60,8 @@ internal data class ListMarker(
     fun next(): String =
         when (kind) {
             ListKind.NUMBERED -> "${number().orZero() + 1}. "
+            // A ticked item still produces an unticked one: the next thing to do is not done yet.
+            ListKind.CHECKLIST -> CHECKLIST_OPEN
             else -> text
         }
 
@@ -96,6 +107,8 @@ private val FIXED_MARKERS =
     listOf(
         ListMarker(ListKind.BULLET, BULLET_MARKER),
         ListMarker(ListKind.DASH, DASH_MARKER),
+        ListMarker(ListKind.CHECKLIST, CHECKLIST_OPEN, checked = false),
+        ListMarker(ListKind.CHECKLIST, CHECKLIST_DONE, checked = true),
     )
 
 private fun digitCount(
