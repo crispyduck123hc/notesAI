@@ -233,4 +233,38 @@ class GitHubIssueRepositoryTest {
             fixture.repository.push(fixture.repoId)
             assertEquals(0L, fixture.rows().single().dirty)
         }
+
+    @Test
+    fun aPullRecordsWhenEachIssueWasOpened() =
+        withFixture { fixture ->
+            fixture.server.addIssue(title = "old one", createdAt = "2024-05-01T09:00:00Z")
+            val repoId = fixture.repository.linkRepo(owner = "octocat", name = "notes", installationId = 1)
+
+            fixture.repository.pull(repoId, force = false)
+
+            val issue = fixture.repository.issue(repoId, number = 1)!!
+            assertEquals(
+                "2024-05-01T09:00:00Z",
+                issue.createdAt,
+                "the folder filters by when an issue was opened, so the mirror has to hold that date",
+            )
+        }
+
+    @Test
+    fun aPullFillsInACreationDateThatWasNeverRecorded() =
+        withFixture { fixture ->
+            // What a row looks like after migrating from a version that had no createdAt column.
+            fixture.server.addIssue(title = "pulled long ago")
+            val repoId = fixture.repository.linkRepo(owner = "octocat", name = "notes", installationId = 1)
+            fixture.repository.pull(repoId, force = false)
+            fixture.driver.execute(null, "UPDATE GitHubIssueNoteEntity SET createdAt = ''", 0)
+
+            fixture.repository.pull(repoId, force = false)
+
+            assertEquals(
+                fixture.server.stored(1)?.createdAt,
+                fixture.repository.issue(repoId, number = 1)!!.createdAt,
+                "the next pull repairs rows the migration could not date",
+            )
+        }
 }

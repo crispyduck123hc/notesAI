@@ -76,6 +76,7 @@ data class GitHubIssue(
     val body: String? = null,
     val state: String = "open",
     @SerialName("updated_at") val updatedAt: String = "",
+    @SerialName("created_at") val createdAt: String = "",
     @SerialName("pull_request") val pullRequest: JsonElement? = null,
 ) {
     val isPullRequest: Boolean get() = pullRequest != null

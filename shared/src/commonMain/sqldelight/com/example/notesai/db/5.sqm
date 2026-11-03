@@ -1,0 +1,6 @@
+-- 5.sqm : v5 -> v6
+--
+-- Issues gained their creation date, so the folder can be filtered by when an issue was opened rather than only by
+-- whether it is closed. Existing rows get the empty string: a date nobody recorded is not a recent date, and the
+-- next pull fills every row in.
+ALTER TABLE GitHubIssueNoteEntity ADD COLUMN createdAt TEXT NOT NULL DEFAULT '';

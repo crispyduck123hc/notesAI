@@ -1,6 +1,7 @@
 package com.example.notesai.ui.tree
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
+import com.example.notesai.github.CreatedWithin
 import com.example.notesai.model.NoteRef
 import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.ui.theme.Dimens
@@ -308,6 +310,18 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
             onClick = gitHub.onFilterClosed,
             label = { Text("Closed ${gitHub.closedCount}") },
         )
+    }
+
+    // A second row: the date dimension. Short labels because the pane is 280dp wide on a phone.
+    FlowRow(modifier = Modifier.fillMaxWidth()) {
+        CreatedWithin.entries.forEach { range ->
+            FilterChip(
+                selected = gitHub.filter.createdWithin == range,
+                onClick = { gitHub.onCreatedWithin(range) },
+                label = { Text("Opened ${range.label}") },
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
     }
 
     val repo = gitHub.selectedRepo ?: return

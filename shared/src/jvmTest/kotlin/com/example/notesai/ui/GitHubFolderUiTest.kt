@@ -266,4 +266,63 @@ class GitHubFolderUiTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun theDayChipHidesIssuesOpenedBeforeIt() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                // One issue opened now, one opened over a year ago. The fake's own stamps are fixed at 2026-01-01,
+                // which is in the past for a test running today, so both dates are set explicitly.
+                val fresh =
+                    fixture.server.addIssue(
+                        title = "opened today",
+                        createdAt =
+                            java.time.Instant
+                                .now()
+                                .toString(),
+                    )
+                val old =
+                    fixture.server.addIssue(
+                        title = "opened long ago",
+                        createdAt =
+                            java.time.Instant
+                                .now()
+                                .minusSeconds(400L * 24 * 60 * 60)
+                                .toString(),
+                    )
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$fresh opened today").fetchSemanticsNodes().isNotEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("#$old opened long ago").fetchSemanticsNodes().isNotEmpty(),
+                    "no date filter yet, so both are shown",
+                )
+
+                onNodeWithText("Opened 24h", substring = true).performClick()
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$old opened long ago").fetchSemanticsNodes().isEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("#$fresh opened today").fetchSemanticsNodes().isNotEmpty(),
+                    "today's issue stays",
+                )
+
+                // And back to any time restores it.
+                onNodeWithText("Opened Any", substring = true).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$old opened long ago").fetchSemanticsNodes().isNotEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
 }

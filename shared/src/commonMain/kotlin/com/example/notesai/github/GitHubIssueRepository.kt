@@ -118,6 +118,7 @@ class GitHubIssueRepository(
             remoteUpdatedAt = created.updatedAt,
             dirty = 0,
             pulledAt = now(),
+            createdAt = created.createdAt,
         )
         return queries.selectGitHubIssue(repoId, created.number).executeAsOneOrNull()
     }
@@ -175,6 +176,7 @@ class GitHubIssueRepository(
                     remoteUpdatedAt = issue.updatedAt,
                     dirty = 0,
                     pulledAt = timestamp,
+                    createdAt = issue.createdAt,
                 )
             } else {
                 queries.updateGitHubIssueFromPull(
@@ -183,6 +185,7 @@ class GitHubIssueRepository(
                     state = issue.state,
                     remoteUpdatedAt = issue.updatedAt,
                     pulledAt = timestamp,
+                    createdAt = issue.createdAt,
                     repoId = repoId,
                     number = issue.number,
                 )

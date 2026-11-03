@@ -1,6 +1,7 @@
 package com.example.notesai.ui.tree
 
 import com.example.notesai.db.GitHubRepoEntity
+import com.example.notesai.github.CreatedWithin
 import com.example.notesai.github.IssueFilter
 
 /**
@@ -37,4 +38,6 @@ internal class GitHubPaneState(
     val onToggleComplete: (repoId: Long, number: Long, completed: Boolean) -> Unit,
     val onFilterOpen: () -> Unit,
     val onFilterClosed: () -> Unit,
+    /** Picks a "opened within" range; [CreatedWithin.ANY_TIME] clears it. */
+    val onCreatedWithin: (CreatedWithin) -> Unit,
 )

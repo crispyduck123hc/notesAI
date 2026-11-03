@@ -118,7 +118,11 @@ CREATE TABLE GitHubIssueNoteEntity (
     remoteUpdatedAt TEXT NOT NULL,
     -- 0/1: edited locally, not yet pushed.
     dirty INTEGER NOT NULL DEFAULT 0,
-    pulledAt INTEGER NOT NULL
+    pulledAt INTEGER NOT NULL,
+    -- When GitHub says the issue was opened (its `created_at`, ISO-8601). Empty for rows pulled before this column
+    -- existed: an unknown creation date is not a recent one, so a date filter leaves those out until the next pull
+    -- fills it in.
+    createdAt TEXT NOT NULL DEFAULT ''
 );
 
 CREATE UNIQUE INDEX GitHubIssueNoteEntity_repo_number ON GitHubIssueNoteEntity(repoId, number);
@@ -343,14 +347,14 @@ selectGitHubIssue:
 SELECT * FROM GitHubIssueNoteEntity WHERE repoId = ? AND number = ?;
 
 insertGitHubIssue:
-INSERT INTO GitHubIssueNoteEntity(repoId, number, title, body, state, remoteUpdatedAt, dirty, pulledAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO GitHubIssueNoteEntity(repoId, number, title, body, state, remoteUpdatedAt, dirty, pulledAt, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- What a pull writes into a row that already exists. `dirty` is set to 0 because the caller only
 -- takes this path when it has decided the row may be overwritten.
 updateGitHubIssueFromPull:
 UPDATE GitHubIssueNoteEntity
-SET title = ?, body = ?, state = ?, remoteUpdatedAt = ?, dirty = 0, pulledAt = ?
+SET title = ?, body = ?, state = ?, remoteUpdatedAt = ?, dirty = 0, pulledAt = ?, createdAt = ?
 WHERE repoId = ? AND number = ?;
 
 markGitHubIssueDirty:
