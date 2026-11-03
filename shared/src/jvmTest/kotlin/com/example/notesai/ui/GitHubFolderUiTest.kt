@@ -189,4 +189,81 @@ class GitHubFolderUiTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun theClosedChipHidesClosedIssuesAndBringsThemBack() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                val open = fixture.server.addIssue(title = "still open")
+                val closed = fixture.server.addIssue(title = "already done", state = "closed")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$open still open").fetchSemanticsNodes().isNotEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("#$closed already done").fetchSemanticsNodes().isNotEmpty(),
+                    "both states are shown to begin with",
+                )
+
+                // The chips carry the counts, so the filter is legible before it is used.
+                onNodeWithText("Open 1", substring = true).assertExists()
+                onNodeWithText("Closed 1", substring = true).assertExists()
+
+                onNodeWithText("Closed 1", substring = true).performClick()
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$closed already done").fetchSemanticsNodes().isEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("#$open still open").fetchSemanticsNodes().isNotEmpty(),
+                    "the open issue is still there",
+                )
+
+                // And turning closed back on restores the row: the mirror was never touched.
+                onNodeWithText("Closed 1", substring = true).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$closed already done").fetchSemanticsNodes().isNotEmpty()
+                }
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun hidingBothStatesLeavesTheRepositoryWithNothingToExpand() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                fixture.server.addIssue(title = "an issue")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("Open 1", substring = true).fetchSemanticsNodes().isNotEmpty()
+                }
+
+                onNodeWithText("Open 1", substring = true).performClick()
+                onNodeWithText("Closed 0", substring = true).performClick()
+
+                // No rows, and the node is no longer expandable — an empty branch rather than a mystery.
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isEmpty()
+                }
+                // The counts still say what exists, which is what stops this looking like data loss.
+                onNodeWithText("Open 1", substring = true).assertExists()
+            } finally {
+                fixture.close()
+            }
+        }
 }

@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -290,6 +292,22 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         enabled = !gitHub.busy,
     ) {
         Text(if (gitHub.repos.isEmpty()) "Link a repository\u2026" else "Link another repository\u2026")
+    }
+
+    // Two state chips, independent of each other: both on is "everything", one on is a filter, neither is
+    // "nothing" — which the tree then shows as an unexpandable node rather than a silent empty list.
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        FilterChip(
+            selected = gitHub.filter.showOpen,
+            onClick = gitHub.onFilterOpen,
+            label = { Text("Open ${gitHub.openCount}") },
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        FilterChip(
+            selected = gitHub.filter.showClosed,
+            onClick = gitHub.onFilterClosed,
+            label = { Text("Closed ${gitHub.closedCount}") },
+        )
     }
 
     val repo = gitHub.selectedRepo ?: return

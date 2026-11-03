@@ -1,6 +1,7 @@
 package com.example.notesai.ui.tree
 
 import com.example.notesai.db.GitHubRepoEntity
+import com.example.notesai.github.IssueFilter
 
 /**
  * Everything the tree pane needs to know about the GitHub folder, gathered in one place so the pane
@@ -17,6 +18,11 @@ internal class GitHubPaneState(
     val repos: List<GitHubRepoEntity>,
     /** The repository whose node is selected, if any — its actions are shown under the tree. */
     val selectedRepo: GitHubRepoEntity?,
+    /** Which issues the tree shows. A view concern: the mirror keeps everything it pulled. */
+    val filter: IssueFilter,
+    /** How many issues the repository has in each state, for the chip labels. */
+    val openCount: Int,
+    val closedCount: Int,
     /** True while a pull, push or completion is in flight, so the buttons can be disabled. */
     val busy: Boolean,
     val onConnect: () -> Unit,
@@ -29,4 +35,6 @@ internal class GitHubPaneState(
     val onNewIssue: (repoId: Long) -> Unit,
     /** Closes or reopens an issue. Offered from the row menu and the editor. */
     val onToggleComplete: (repoId: Long, number: Long, completed: Boolean) -> Unit,
+    val onFilterOpen: () -> Unit,
+    val onFilterClosed: () -> Unit,
 )

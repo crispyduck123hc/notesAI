@@ -20,6 +20,8 @@ import com.example.notesai.data.NoteRepository
 import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.github.GitHubPushResult
+import com.example.notesai.github.IssueFilter
+import com.example.notesai.github.filteredBy
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.model.NoteRef
@@ -80,6 +82,11 @@ internal fun NotesScreen(
     // signed-out one. Hidden, not deleted: signing in again brings them straight back.
     val gitHubRepos = if (gitHubLogin == null) emptyList() else linkedRepos
 
+    var issueFilter by remember { mutableStateOf(IssueFilter()) }
+    // The tree is built from the filtered list; the editor and the GitHub pane keep using the whole mirror, so
+    // hiding a row never closes the note that is open or changes what a push sends.
+    val visibleGitHubIssues = remember(gitHubIssues, issueFilter) { gitHubIssues.filteredBy(issueFilter) }
+
     var expanded by remember { mutableStateOf(setOf(NoteRepository.ROOT_FOLDER_ID)) }
     var selectedFolderId by remember { mutableStateOf(NoteRepository.ROOT_FOLDER_ID) }
     var selectedRef by remember { mutableStateOf<NoteRef?>(null) }
@@ -103,8 +110,8 @@ internal fun NotesScreen(
     val scope = rememberCoroutineScope()
 
     val tree =
-        remember(folders, notes, expanded, gitHubRepos, gitHubIssues) {
-            buildNoteTree(folders, notes, expanded, gitHubRepos, gitHubIssues)
+        remember(folders, notes, expanded, gitHubRepos, visibleGitHubIssues) {
+            buildNoteTree(folders, notes, expanded, gitHubRepos, visibleGitHubIssues)
         }
     // The row id the tree highlights, and the entity behind the open note. Both are derived from the
     // selection rather than stored, so a note edited or pulled elsewhere still shows its current text.
@@ -194,6 +201,11 @@ internal fun NotesScreen(
                     login = gitHubLogin,
                     repos = gitHubRepos,
                     selectedRepo = selectedRepo,
+                    filter = issueFilter,
+                    openCount = gitHubIssues.count { it.state != "closed" },
+                    closedCount = gitHubIssues.count { it.state == "closed" },
+                    onFilterOpen = { issueFilter = issueFilter.togglingOpen() },
+                    onFilterClosed = { issueFilter = issueFilter.togglingClosed() },
                     busy = gitHubBusy,
                     onConnect = {
                         runGitHub {
