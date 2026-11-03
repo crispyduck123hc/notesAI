@@ -20,6 +20,7 @@ import java.net.InetSocketAddress
 class FakeGitHubServer(
     private val pageSize: Int = Int.MAX_VALUE,
 ) {
+    @Suppress("LongParameterList") // a test double of a JSON payload; the fields are the payload
     class StoredIssue(
         val number: Long,
         var title: String,
@@ -27,6 +28,8 @@ class FakeGitHubServer(
         var state: String = "open",
         var updatedAt: String = "",
         val isPullRequest: Boolean = false,
+        /** Set when the issue is created; `created_at` never moves afterwards. */
+        var createdAt: String = "",
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -68,16 +71,19 @@ class FakeGitHubServer(
         body: String = "",
         state: String = "open",
         isPullRequest: Boolean = false,
+        createdAt: String? = null,
     ): Long {
         val number = nextNumber++
+        val stamp = nextTimestamp()
         issues[number] =
             StoredIssue(
                 number = number,
                 title = title,
                 body = body,
                 state = state,
-                updatedAt = nextTimestamp(),
+                updatedAt = stamp,
                 isPullRequest = isPullRequest,
+                createdAt = createdAt ?: stamp,
             )
         issueCount = issues.size
         return number
@@ -240,6 +246,7 @@ class FakeGitHubServer(
             put("body", issue.body)
             put("state", issue.state)
             put("updated_at", issue.updatedAt)
+            put("created_at", issue.createdAt)
             if (issue.isPullRequest) {
                 put("pull_request", buildJsonObject { put("url", "https://api.github.com/pulls/1") })
             }

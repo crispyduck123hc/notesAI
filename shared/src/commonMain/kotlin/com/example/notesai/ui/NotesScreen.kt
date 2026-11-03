@@ -206,6 +206,7 @@ internal fun NotesScreen(
                     closedCount = gitHubIssues.count { it.state == "closed" },
                     onFilterOpen = { issueFilter = issueFilter.togglingOpen() },
                     onFilterClosed = { issueFilter = issueFilter.togglingClosed() },
+                    onCreatedWithin = { range -> issueFilter = issueFilter.createdWithin(range) },
                     busy = gitHubBusy,
                     onConnect = {
                         runGitHub {
