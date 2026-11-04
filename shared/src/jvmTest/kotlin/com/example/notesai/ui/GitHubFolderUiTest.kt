@@ -325,4 +325,41 @@ class GitHubFolderUiTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun theCustomChipOpensTheDateDialogAndFiltersByTheRange() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                val inside = fixture.server.addIssue(title = "inside the range", createdAt = "2026-03-10T09:00:00Z")
+                val outside = fixture.server.addIssue(title = "outside the range", createdAt = "2026-04-02T09:00:00Z")
+                fixture.linkedRepo(owner = "octocat", name = "notes")
+
+                setContent { fixture.Screen() }
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$inside inside the range").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                onNodeWithText("Custom", substring = true).performClick()
+                onAllNodes(hasSetTextAction())[0].performTextInput("2026-03-01")
+                onAllNodes(hasSetTextAction())[1].performTextInput("2026-03-31")
+                onNodeWithText("Apply").performClick()
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("#$outside outside the range").fetchSemanticsNodes().isEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("#$inside inside the range").fetchSemanticsNodes().isNotEmpty(),
+                    "the issue inside the range stays",
+                )
+                // The chip now says which range it stands for, rather than a generic "Custom".
+                onNodeWithText("2026-03-01", substring = true).assertExists()
+            } finally {
+                fixture.close()
+            }
+        }
 }

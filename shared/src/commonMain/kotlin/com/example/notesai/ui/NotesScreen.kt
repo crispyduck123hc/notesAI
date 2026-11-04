@@ -31,6 +31,7 @@ import com.example.notesai.model.gitHubRepoNodeId
 import com.example.notesai.model.toDocument
 import com.example.notesai.ui.dialogs.ConflictDialog
 import com.example.notesai.ui.dialogs.ConflictUiItem
+import com.example.notesai.ui.dialogs.DateRangeDialog
 import com.example.notesai.ui.dialogs.FolderNameDialog
 import com.example.notesai.ui.dialogs.LinkRepoDialog
 import com.example.notesai.ui.dialogs.LinkableRepo
@@ -83,6 +84,7 @@ internal fun NotesScreen(
     val gitHubRepos = if (gitHubLogin == null) emptyList() else linkedRepos
 
     var issueFilter by remember { mutableStateOf(IssueFilter()) }
+    var showDateRange by remember { mutableStateOf(false) }
     // The tree is built from the filtered list; the editor and the GitHub pane keep using the whole mirror, so
     // hiding a row never closes the note that is open or changes what a push sends.
     val visibleGitHubIssues = remember(gitHubIssues, issueFilter) { gitHubIssues.filteredBy(issueFilter) }
@@ -207,6 +209,7 @@ internal fun NotesScreen(
                     onFilterOpen = { issueFilter = issueFilter.togglingOpen() },
                     onFilterClosed = { issueFilter = issueFilter.togglingClosed() },
                     onCreatedWithin = { range -> issueFilter = issueFilter.createdWithin(range) },
+                    onPickCalendarRange = { showDateRange = true },
                     busy = gitHubBusy,
                     onConnect = {
                         runGitHub {
@@ -346,6 +349,18 @@ internal fun NotesScreen(
                         }
                     }
                 },
+        )
+    }
+
+    if (showDateRange) {
+        DateRangeDialog(
+            from = issueFilter.createdFrom,
+            to = issueFilter.createdTo,
+            onDismiss = { showDateRange = false },
+            onApply = { from, to ->
+                issueFilter = issueFilter.createdBetween(from, to)
+                showDateRange = false
+            },
         )
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
@@ -80,7 +81,9 @@ internal fun NoteTreePane(
 
         Spacer(modifier = Modifier.height(Dimens.Gutter))
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
+        // Tagged so a test can scroll to a row: with the filter chips above it, a five-row tree no longer always
+        // fits, and a row that is composed off-screen is not in the semantics tree.
+        LazyColumn(modifier = Modifier.weight(1f).testTag(TREE_LIST_TAG)) {
             // The key comes from the row itself, so the rule lives beside the ids it protects rather
             // than here — several GitHub issue rows would otherwise share one id.
             items(tree, key = { it.key }) { item ->
@@ -312,13 +315,22 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         )
     }
 
-    // A second row: the date dimension. Short labels because the pane is 280dp wide on a phone.
+    // A second row: the date dimension. Short labels because the pane is 280dp wide on a phone. The custom chip
+    // shows the dates it stands for, so the filter never says "custom" without saying what it is.
     FlowRow(modifier = Modifier.fillMaxWidth()) {
         CreatedWithin.entries.forEach { range ->
+            val label =
+                if (range == CreatedWithin.CUSTOM) {
+                    gitHub.filter.calendarRangeLabel ?: range.label
+                } else {
+                    "Opened ${range.label}"
+                }
             FilterChip(
                 selected = gitHub.filter.createdWithin == range,
-                onClick = { gitHub.onCreatedWithin(range) },
-                label = { Text("Opened ${range.label}") },
+                onClick = {
+                    if (range == CreatedWithin.CUSTOM) gitHub.onPickCalendarRange() else gitHub.onCreatedWithin(range)
+                },
+                label = { Text(label) },
                 modifier = Modifier.padding(end = 4.dp),
             )
         }
@@ -355,3 +367,6 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         Text("Unlink")
     }
 }
+
+/** Marks the tree's scrolling list, so tests can scroll to a row that is below the fold. */
+internal const val TREE_LIST_TAG: String = "tree-list"
