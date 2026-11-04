@@ -40,4 +40,6 @@ internal class GitHubPaneState(
     val onFilterClosed: () -> Unit,
     /** Picks a "opened within" range; [CreatedWithin.ANY_TIME] clears it. */
     val onCreatedWithin: (CreatedWithin) -> Unit,
+    /** Opens the dialog for a calendar range. */
+    val onPickCalendarRange: () -> Unit,
 )

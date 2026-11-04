@@ -12,11 +12,13 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.height
 import com.example.notesai.APP_VERSION
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.ui.tree.TREE_LIST_TAG
 import com.example.notesai.ui.tree.TREE_ROW_TAG
 import com.example.notesai.update.AvailableUpdate
 import kotlin.test.Test
@@ -212,6 +214,10 @@ class NotesScreenTest {
                 }
                 // Expand the repository so an issue row exists to measure.
                 onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
+                waitForIdle()
+                // The tree scrolls now that two filter rows sit above it: bring the row into view first, because a row
+                // composed off-screen is not in the semantics tree at all (and so cannot be waited for).
+                onNode(hasTestTag(TREE_LIST_TAG)).performScrollToNode(hasText("#1 an issue"))
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isNotEmpty()
                 }
@@ -221,6 +227,9 @@ class NotesScreenTest {
                 val labels = listOf("root", "my folder", "a note", "octocat/notes", "#1 an issue")
                 val heights: Map<String, androidx.compose.ui.unit.Dp> =
                     labels.associateWith { label ->
+                        // Scroll each row into view on its own: the list is taller than its viewport now, and only
+                        // composed rows can be measured.
+                        onNode(hasTestTag(TREE_LIST_TAG)).performScrollToNode(hasTestTag(TREE_ROW_TAG) and hasText(label))
                         onNode(hasTestTag(TREE_ROW_TAG) and hasText(label)).getUnclippedBoundsInRoot().height
                     }
 

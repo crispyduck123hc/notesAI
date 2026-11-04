@@ -1,9 +1,12 @@
 package com.example.notesai.github
 
 import com.example.notesai.db.GitHubIssueNoteEntity
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
@@ -159,5 +162,85 @@ class IssueFilterTest {
         val issues = listOf(issue(1, "open", created = (now - 1.days).toString()), issue(2, "open", created = (now - 10.days).toString()))
 
         assertEquals(listOf(1L), issues.filteredBy(IssueFilter(createdWithin = CreatedWithin.LAST_WEEK), now).map { it.number })
+    }
+
+    // ---- A calendar range: both ends chosen ---------------------------------------------------------
+
+    private val march1 = LocalDate(2026, 3, 1)
+    private val march15 = LocalDate(2026, 3, 15)
+
+    private fun at(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int = 12,
+    ): String = Instant.parse("$year-${month.pad()}-${day.pad()}T${hour.pad()}:00:00Z").toString()
+
+    private fun Int.pad() = toString().padStart(2, '0')
+
+    private fun createdInRange(
+        from: LocalDate?,
+        to: LocalDate?,
+        created: String,
+    ): Boolean = IssueFilter().createdBetween(from, to).matchesCreated(created, now, TimeZone.UTC)
+
+    @Test
+    fun bothEndsAreInclusive() {
+        assertTrue(createdInRange(march1, march15, at(2026, 3, 1)), "the first day counts")
+        assertTrue(createdInRange(march1, march15, at(2026, 3, 15)), "and so does the last, right to its end")
+        assertTrue(createdInRange(march1, march15, at(2026, 3, 15, hour = 23)))
+        assertFalse(createdInRange(march1, march15, at(2026, 3, 16)), "the day after does not")
+        assertFalse(createdInRange(march1, march15, at(2026, 2, 28)), "nor the day before")
+    }
+
+    @Test
+    fun eitherEndCanBeLeftOpen() {
+        assertTrue(createdInRange(march1, null, at(2030, 1, 1)), "since March: anything later")
+        assertFalse(createdInRange(march1, null, at(2026, 2, 1)))
+
+        assertTrue(createdInRange(null, march15, at(2020, 1, 1)), "until March: anything earlier")
+        assertFalse(createdInRange(null, march15, at(2026, 4, 1)))
+    }
+
+    @Test
+    fun anEmptyRangeFallsBackToNoDateFilter() {
+        val filter = IssueFilter().createdBetween(null, null)
+
+        assertEquals(CreatedWithin.ANY_TIME, filter.createdWithin, "the chips say what the dates say")
+        assertNull(filter.calendarRangeLabel)
+        assertTrue(filter.matchesCreated("", now), "and it hides nothing, not even undated rows")
+    }
+
+    @Test
+    fun choosingARelativeRangeClearsTheCalendarDates() {
+        val custom = IssueFilter().createdBetween(march1, march15)
+
+        assertEquals(CreatedWithin.CUSTOM, custom.createdWithin)
+        assertEquals("2026-03-01 – 2026-03-15", custom.calendarRangeLabel)
+
+        val week = custom.createdWithin(CreatedWithin.LAST_WEEK)
+        assertNull(week.createdFrom, "the two can never disagree")
+        assertNull(week.createdTo)
+    }
+
+    @Test
+    fun theLabelSaysWhichEndsAreSet() {
+        assertEquals("since 2026-03-01", IssueFilter().createdBetween(march1, null).calendarRangeLabel)
+        assertEquals("until 2026-03-15", IssueFilter().createdBetween(null, march15).calendarRangeLabel)
+    }
+
+    @Test
+    fun theCalendarRangeUsesTheReaderOwnDay() {
+        // 23:30 on the last chosen day in Berlin is already the next day in UTC; a local day must keep it.
+        val berlin = TimeZone.of("Europe/Berlin")
+        val filter = IssueFilter().createdBetween(march1, march15)
+        val lateOnTheLastDay = Instant.parse("2026-03-15T22:30:00Z") // 23:30 Berlin
+
+        assertTrue(filter.matchesCreated(lateOnTheLastDay.toString(), now, berlin))
+    }
+
+    @Test
+    fun anUndatedIssueIsNotInsideARange() {
+        assertFalse(createdInRange(march1, march15, ""))
     }
 }
