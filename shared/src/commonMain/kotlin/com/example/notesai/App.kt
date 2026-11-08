@@ -31,7 +31,7 @@ import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.sync.REQUEST_TIMEOUT_MILLIS
 import com.example.notesai.ui.LoginScreen
-import com.example.notesai.ui.NotesScreen
+import com.example.notesai.ui.notes.NotesScreen
 import com.example.notesai.ui.openInBrowser
 import com.example.notesai.ui.theme.NotesAiTheme
 import com.example.notesai.update.AvailableUpdate

@@ -8,6 +8,7 @@ import com.example.notesai.db.NotesDatabase
 import com.example.notesai.github.FakeGitHubServer
 import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
+import com.example.notesai.ui.notes.NotesScreen
 import com.example.notesai.update.AvailableUpdate
 import io.ktor.client.HttpClient
 
