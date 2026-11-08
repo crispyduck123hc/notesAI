@@ -401,6 +401,7 @@ shared/       Kotlin Multiplatform: UI, database, sync engine, OAuth, Drive clie
   commonMain/          shared code and Compose UI
     model/             what the UI renders, as plain Kotlin: the note tree and the open document
     ui/                Compose only
+      notes/           the notes screen: layout, its state, its dialogs, the GitHub wiring
       editor/          the text editor and its writing behaviours (bullet points)
       tree/            the sidebar: tree pane, row, GitHub pane state
       dialogs/         one file per dialog
@@ -426,7 +427,7 @@ Inside `shared/commonMain`, the interesting parts:
 | `update/` | Version comparison and the "newer release exists" check |
 | `model/NoteTree.kt` | Flattens folders, notes and issues into rendered rows |
 | `model/NoteDocument.kt` | `NoteRef` — which note the editor has open — and what it renders |
-| `ui/` | Compose only: `NotesScreen`, plus `editor/`, `tree/`, `dialogs/`, `theme/` |
+| `ui/` | Compose only: `notes/` (the screen), `editor/`, `tree/`, `dialogs/`, `theme/` |
 
 `model/` is deliberately outside `ui/`: it has no Compose widgets, only `@Immutable` annotations, so it
 is unit-testable without a UI harness and `ui/` can depend on it but never the reverse.
