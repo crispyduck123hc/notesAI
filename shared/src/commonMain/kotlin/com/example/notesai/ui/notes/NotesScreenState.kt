@@ -10,10 +10,10 @@ import androidx.compose.runtime.setValue
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.github.CreatedWithin
 import com.example.notesai.github.IssueFilter
+import com.example.notesai.github.LinkableRepository
 import com.example.notesai.model.NoteRef
 import com.example.notesai.model.NoteTreeItem
 import com.example.notesai.model.folderAndDescendants
-import com.example.notesai.ui.dialogs.LinkableRepo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -52,7 +52,7 @@ internal class NotesScreenState(
     var gitHubBusy by mutableStateOf(false)
     var gitHubError by mutableStateOf<String?>(null)
     var gitHubNotice by mutableStateOf<String?>(null)
-    var linkableRepos by mutableStateOf<List<LinkableRepo>?>(null)
+    var linkableRepos by mutableStateOf<List<LinkableRepository>?>(null)
     var linkLoading by mutableStateOf(false)
     var linkError by mutableStateOf<String?>(null)
     var forcePullTarget by mutableStateOf<Long?>(null)

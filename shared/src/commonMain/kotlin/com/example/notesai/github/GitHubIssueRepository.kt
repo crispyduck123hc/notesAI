@@ -11,6 +11,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
+/** A repository the app can be pointed at, with the installation that grants it. */
+data class LinkableRepository(
+    val installationId: Long,
+    val owner: String,
+    val name: String,
+) {
+    val label: String get() = "$owner/$name"
+}
+
 /** What one pull did, so the UI can say something truthful about it. */
 data class GitHubPullResult(
     val pulled: Int,
@@ -39,6 +48,7 @@ data class GitHubPushResult(
  * folder; a GitHub issue must never travel there. Keeping it in its own tables makes that structural
  * rather than a flag someone has to remember to check.
  */
+@Suppress("TooManyFunctions")
 class GitHubIssueRepository(
     driver: SqlDriver,
     private val client: GitHubClient,
@@ -62,6 +72,21 @@ class GitHubIssueRepository(
     ): GitHubIssueNoteEntity? = queries.selectGitHubIssue(repoId, number).executeAsOneOrNull()
 
     // ---- Linking -----------------------------------------------------------
+
+    /**
+     * Repositories the app can be pointed at: everything the GitHub App installation was granted, filtered to the
+     * ones this user can push to.
+     *
+     * Here rather than in the screen because it is two API calls and a filter — the same shape as a pull — and because
+     * it lets the UI keep knowing nothing about [GitHubClient].
+     */
+    suspend fun linkableRepositories(): List<LinkableRepository> =
+        client.installations().flatMap { installation ->
+            client.installationRepositories(installation.id).mapNotNull { repo ->
+                val owner = repo.owner?.login?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                LinkableRepository(installationId = installation.id, owner = owner, name = repo.name)
+            }
+        }
 
     /** Links a repository, or updates the installation it is reachable through. */
     fun linkRepo(

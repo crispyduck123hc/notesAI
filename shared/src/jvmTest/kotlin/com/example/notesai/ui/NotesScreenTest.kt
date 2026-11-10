@@ -1,5 +1,8 @@
 package com.example.notesai.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
@@ -18,6 +21,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.height
 import com.example.notesai.APP_VERSION
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.ui.notes.SyncUiState
 import com.example.notesai.ui.tree.TREE_LIST_TAG
 import com.example.notesai.ui.tree.TREE_ROW_TAG
 import com.example.notesai.update.AvailableUpdate
@@ -302,6 +306,47 @@ class NotesScreenTest {
                     onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
                         .fetchSemanticsNodes()
                         .size,
+                )
+            } finally {
+                fixture.close()
+            }
+        }
+
+    @Test
+    fun theSidebarSaysWhatTheSyncStateActuallyIs() =
+        runComposeUiTest {
+            // One value instead of three parameters means the sidebar cannot say "Syncing…" and show an error at the
+            // same time; this walks the four cases the type allows.
+            val fixture = ScreenFixture()
+            try {
+                var sync: SyncUiState by mutableStateOf(SyncUiState.Idle)
+                setContent {
+                    fixture.Screen(sync = sync)
+                }
+
+                onNodeWithText("Not synced yet").assertExists()
+
+                sync = SyncUiState.Running
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("Syncing\u2026").fetchSemanticsNodes().isNotEmpty()
+                }
+
+                sync = SyncUiState.Done("Synced \u2014 pushed 2, pulled 1")
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("Synced \u2014 pushed 2, pulled 1").fetchSemanticsNodes().isNotEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("what went wrong?", substring = true).fetchSemanticsNodes().isEmpty(),
+                    "a finished sync offers no error link",
+                )
+
+                sync = SyncUiState.Failed(summary = "Sync failed", detail = "GitHub said 403")
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("what went wrong?", substring = true).fetchSemanticsNodes().isNotEmpty()
+                }
+                assertTrue(
+                    onAllNodesWithText("Sync failed").fetchSemanticsNodes().isNotEmpty(),
+                    "and the one-line summary is still shown",
                 )
             } finally {
                 fixture.close()

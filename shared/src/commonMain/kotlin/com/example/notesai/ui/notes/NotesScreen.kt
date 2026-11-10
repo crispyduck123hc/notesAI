@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
-import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.github.filteredBy
 import com.example.notesai.model.Completion
@@ -38,16 +37,13 @@ import com.example.notesai.update.AvailableUpdate
 internal fun NotesScreen(
     repository: NoteRepository,
     account: AccountInfo,
-    syncStatus: String?,
-    syncError: String?,
-    syncing: Boolean,
+    sync: SyncUiState,
     gitHubRepository: GitHubIssueRepository,
-    gitHubClient: GitHubClient,
     /** Null when GitHub is not connected. */
     gitHubLogin: String?,
     /** Non-null when a newer release than the running one has been published. */
     availableUpdate: AvailableUpdate? = null,
-    onOpenUpdate: () -> Unit = {},
+    onOpenUpdate: (AvailableUpdate) -> Unit = {},
     onConnectGitHub: suspend () -> Unit,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
@@ -129,9 +125,7 @@ internal fun NotesScreen(
             selectedFolderId = state.selectedFolderId,
             selectedRef = state.selectedRef,
             accountEmail = account.email,
-            syncStatus = syncStatus,
-            hasSyncError = syncError != null,
-            syncing = syncing,
+            sync = sync,
             conflictCount = conflictItems.size,
             availableUpdate = availableUpdate,
             onOpenUpdate = onOpenUpdate,
@@ -142,7 +136,6 @@ internal fun NotesScreen(
                     repos = gitHubRepos,
                     selectedRepo = selectedRepo,
                     repository = gitHubRepository,
-                    client = gitHubClient,
                     issueCounts =
                         IssueCounts(
                             open = gitHubIssues.count { it.state != "closed" },
@@ -235,7 +228,7 @@ internal fun NotesScreen(
         repository = repository,
         gitHubRepository = gitHubRepository,
         conflictItems = conflictItems,
-        syncError = syncError,
+        sync = sync,
         unsavedIssuesFor = { repoId -> gitHubIssues.count { it.repoId == repoId && it.dirty == 1L } },
         onRetrySync = onRetrySync,
         onResolveConflict = onResolveConflict,

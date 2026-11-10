@@ -32,6 +32,7 @@ import com.example.notesai.sync.NoteSyncEngine
 import com.example.notesai.sync.REQUEST_TIMEOUT_MILLIS
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.notes.NotesScreen
+import com.example.notesai.ui.notes.SyncUiState
 import com.example.notesai.ui.openInBrowser
 import com.example.notesai.ui.theme.NotesAiTheme
 import com.example.notesai.update.AvailableUpdate
@@ -243,26 +244,31 @@ private fun AccountNotes(
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
     val scope = rememberCoroutineScope()
 
-    var syncStatus by remember(scopeName) { mutableStateOf<String?>(null) }
-    // Starts as the sign-in warning so the guidance is available immediately; the first sync
-    // then replaces it, clearing it on success. Requests are the authority, not this.
-    var syncError by remember(scopeName) { mutableStateOf(signInWarning) }
-    var syncing by remember(scopeName) { mutableStateOf(false) }
+    // One value for the sidebar, so it cannot say "syncing" and show an error at the same time.
+    // Starts as the sign-in warning so the guidance is available immediately; the first sync then replaces it,
+    // clearing it on success. Requests are the authority, not this.
+    var syncState by remember(scopeName) {
+        mutableStateOf(
+            if (signInWarning != null) SyncUiState.Failed(signInWarning) else SyncUiState.Idle,
+        )
+    }
 
     suspend fun runSync(
         pushSettleMillis: Long = PUSH_SETTLE_MILLIS,
         deadlineMillis: Long? = null,
     ) {
-        syncing = true
-        if (accountMismatch) {
-            syncStatus = ACCOUNT_MISMATCH_MESSAGE
-            syncError = null
-        } else {
-            val outcome = describeSync(syncEngine, repository, pushSettleMillis, deadlineMillis)
-            syncStatus = outcome.summary
-            syncError = outcome.error
-        }
-        syncing = false
+        syncState = SyncUiState.Running
+        syncState =
+            if (accountMismatch) {
+                SyncUiState.Failed(ACCOUNT_MISMATCH_MESSAGE)
+            } else {
+                val outcome = describeSync(syncEngine, repository, pushSettleMillis, deadlineMillis)
+                if (outcome.error == null) {
+                    SyncUiState.Done(outcome.summary)
+                } else {
+                    SyncUiState.Failed(summary = outcome.summary, detail = outcome.error)
+                }
+            }
     }
 
     // Offer this account's outbox to the exit path. Unregistering before closing matters: the
@@ -303,18 +309,15 @@ private fun AccountNotes(
     NotesScreen(
         repository = repository,
         account = account,
-        syncStatus = syncStatus,
-        syncError = syncError,
-        syncing = syncing,
+        sync = syncState,
         gitHubRepository = gitHubRepository,
-        gitHubClient = gitHubClient,
         gitHubLogin = gitHubLogin,
         availableUpdate = availableUpdate,
-        onOpenUpdate = {
+        onOpenUpdate = { update ->
             // The release page, where the install instructions live. Opening a browser is the one
             // action that does nothing on mobile — the message is still useful there, the click is
             // not, which is the same trade-off the GitHub links already make.
-            availableUpdate?.let { openInBrowser(it.releaseUrl) }
+            openInBrowser(update.releaseUrl)
         },
         onConnectGitHub = onConnectGitHub,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
@@ -325,7 +328,7 @@ private fun AccountNotes(
                     // Reconcile straight away so the resolution reaches the remote.
                     runSync()
                 } catch (t: Throwable) {
-                    syncStatus = t.message ?: "Could not resolve conflict"
+                    syncState = SyncUiState.Failed(t.message ?: "Could not resolve conflict")
                 }
             }
         },
