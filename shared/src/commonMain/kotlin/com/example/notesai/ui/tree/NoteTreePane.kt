@@ -29,6 +29,7 @@ import com.example.notesai.APP_VERSION
 import com.example.notesai.github.CreatedWithin
 import com.example.notesai.model.NoteRef
 import com.example.notesai.model.NoteTreeItem
+import com.example.notesai.ui.notes.SyncUiState
 import com.example.notesai.ui.theme.Dimens
 import com.example.notesai.update.AvailableUpdate
 import kotlinx.collections.immutable.ImmutableList
@@ -40,9 +41,7 @@ internal fun NoteTreePane(
     selectedFolderId: Long,
     selectedRef: NoteRef?,
     accountEmail: String?,
-    syncStatus: String?,
-    hasSyncError: Boolean,
-    syncing: Boolean,
+    sync: SyncUiState,
     conflictCount: Int,
     /** Non-null when a newer release has been published than the one running. */
     availableUpdate: AvailableUpdate?,
@@ -59,7 +58,7 @@ internal fun NoteTreePane(
     onCreateFolder: () -> Unit,
     onReviewConflicts: () -> Unit,
     onShowSyncError: () -> Unit,
-    onOpenUpdate: () -> Unit,
+    onOpenUpdate: (AvailableUpdate) -> Unit,
     onSignOut: () -> Unit,
 ) {
     Column(
@@ -161,10 +160,11 @@ internal fun NoteTreePane(
         // window regains focus, and on a slow tick — this is a report, not a control.
         Text(
             text =
-                when {
-                    syncing -> "Syncing\u2026"
-                    syncStatus != null -> syncStatus
-                    else -> "Not synced yet"
+                when (sync) {
+                    SyncUiState.Running -> "Syncing\u2026"
+                    SyncUiState.Idle -> "Not synced yet"
+                    is SyncUiState.Done -> sync.summary
+                    is SyncUiState.Failed -> sync.summary
                 },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -173,7 +173,7 @@ internal fun NoteTreePane(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        if (hasSyncError) {
+        if (sync is SyncUiState.Failed) {
             TextButton(
                 onClick = onShowSyncError,
                 modifier = Modifier.fillMaxWidth(),
@@ -231,7 +231,7 @@ internal fun NoteTreePane(
             // something to install is that something exists, and the build number is still named on
             // the line below so a bug report can quote it.
             TextButton(
-                onClick = onOpenUpdate,
+                onClick = { onOpenUpdate(availableUpdate) },
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = Dimens.Gutter, vertical = 0.dp),
             ) {

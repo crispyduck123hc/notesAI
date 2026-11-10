@@ -14,15 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.notesai.github.GitHubRepo
-
-/** A repository the app can reach, with the installation that grants it. */
-internal data class LinkableRepo(
-    val installationId: Long,
-    val repo: GitHubRepo,
-) {
-    val label: String get() = repo.fullName.ifBlank { repo.name }
-}
+import com.example.notesai.github.LinkableRepository
 
 /**
  * Picks a repository to link.
@@ -34,10 +26,10 @@ internal data class LinkableRepo(
  */
 @Composable
 internal fun LinkRepoDialog(
-    repos: List<LinkableRepo>,
+    repos: List<LinkableRepository>,
     loading: Boolean,
     error: String?,
-    onSelect: (LinkableRepo) -> Unit,
+    onSelect: (LinkableRepository) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(

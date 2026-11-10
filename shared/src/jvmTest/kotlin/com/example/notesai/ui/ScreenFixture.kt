@@ -9,6 +9,7 @@ import com.example.notesai.github.FakeGitHubServer
 import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.ui.notes.NotesScreen
+import com.example.notesai.ui.notes.SyncUiState
 import com.example.notesai.update.AvailableUpdate
 import io.ktor.client.HttpClient
 
@@ -41,19 +42,17 @@ internal class ScreenFixture {
     @Composable
     fun Screen(
         gitHubLogin: String? = "octocat",
+        sync: SyncUiState = SyncUiState.Idle,
         availableUpdate: AvailableUpdate? = null,
-        onOpenUpdate: () -> Unit = {},
+        onOpenUpdate: (AvailableUpdate) -> Unit = {},
         onConnectGitHub: suspend () -> Unit = {},
         onSignOut: () -> Unit = {},
     ) {
         NotesScreen(
             repository = repository,
             account = AccountInfo(email = "someone@example.com", expiresAtMillis = 0),
-            syncStatus = null,
-            syncError = null,
-            syncing = false,
+            sync = sync,
             gitHubRepository = gitHub,
-            gitHubClient = client,
             gitHubLogin = gitHubLogin,
             availableUpdate = availableUpdate,
             onOpenUpdate = onOpenUpdate,

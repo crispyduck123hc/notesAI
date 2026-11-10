@@ -4,10 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.notesai.db.GitHubRepoEntity
-import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.github.IssueFilter
-import com.example.notesai.ui.dialogs.LinkableRepo
 import com.example.notesai.ui.tree.GitHubPaneState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -26,7 +24,6 @@ internal fun rememberGitHubPaneState(
     repos: List<GitHubRepoEntity>,
     selectedRepo: GitHubRepoEntity?,
     repository: GitHubIssueRepository,
-    client: GitHubClient,
     issueCounts: IssueCounts,
     /** Read here and passed in rather than read off [state] inside the `remember`: a captured read would freeze. */
     filter: IssueFilter,
@@ -37,7 +34,7 @@ internal fun rememberGitHubPaneState(
     // reports into the same busy/error slots as everything else here.
     val scope = rememberCoroutineScope()
 
-    return remember(state, login, repos, selectedRepo, repository, client, issueCounts, filter, busy, onConnectGitHub, scope) {
+    return remember(state, login, repos, selectedRepo, repository, issueCounts, filter, busy, onConnectGitHub, scope) {
         GitHubPaneState(
             login = login,
             repos = repos,
@@ -62,14 +59,7 @@ internal fun rememberGitHubPaneState(
                 state.linkLoading = true
                 scope.launch {
                     try {
-                        // Installations first: the app can only see repositories the GitHub App
-                        // was installed on, and only ones this user can push to.
-                        state.linkableRepos =
-                            client.installations().flatMap { installation ->
-                                client
-                                    .installationRepositories(installation.id)
-                                    .map { LinkableRepo(installationId = installation.id, repo = it) }
-                            }
+                        state.linkableRepos = repository.linkableRepositories()
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (

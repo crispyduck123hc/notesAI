@@ -34,7 +34,7 @@ internal fun NotesScreenDialogs(
     repository: NoteRepository,
     gitHubRepository: GitHubIssueRepository,
     conflictItems: List<ConflictUiItem>,
-    syncError: String?,
+    sync: SyncUiState,
     /** Unsaved issues in a repository, for the force-pull warning. */
     unsavedIssuesFor: (repoId: Long) -> Int,
     onRetrySync: () -> Unit,
@@ -107,7 +107,7 @@ internal fun NotesScreenDialogs(
         )
     }
 
-    val problem = syncError
+    val problem = (sync as? SyncUiState.Failed)?.let { it.detail ?: it.summary }
     if (state.showSyncError && problem != null) {
         SyncErrorDialog(
             message = problem,
@@ -129,12 +129,13 @@ internal fun NotesScreenDialogs(
             error = state.linkError,
             onSelect = { selected ->
                 state.linkableRepos = null
-                val owner =
-                    selected.repo.owner
-                        ?.login
-                        .orEmpty()
                 state.runGitHub {
-                    val repoId = gitHubRepository.linkRepo(owner, selected.repo.name, selected.installationId)
+                    val repoId =
+                        gitHubRepository.linkRepo(
+                            owner = selected.owner,
+                            name = selected.name,
+                            installationId = selected.installationId,
+                        )
                     // Expand the new folder so the first pull's results are visible.
                     state.expanded = state.expanded + gitHubRepoNodeId(repoId)
                     state.selectedFolderId = gitHubRepoNodeId(repoId)

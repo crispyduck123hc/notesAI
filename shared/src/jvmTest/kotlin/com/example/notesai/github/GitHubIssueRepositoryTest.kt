@@ -267,4 +267,29 @@ class GitHubIssueRepositoryTest {
                 "the next pull repairs rows the migration could not date",
             )
         }
+
+    @Test
+    fun linkableRepositoriesComeFromTheInstallationAndCarryItsId() =
+        withFixture { fixture ->
+            // The screen used to do this itself with two API calls; now it asks the repository, so the screen needs no
+            // GitHub client at all.
+            val linkable = fixture.repository.linkableRepositories()
+
+            assertEquals(
+                listOf("octocat/notes"),
+                linkable.map { it.label },
+                "only repositories the installation grants",
+            )
+            assertEquals(1L, linkable.single().installationId, "the installation is remembered, not re-looked-up")
+        }
+
+    @Test
+    fun aLinkableRepositoryCanBeLinkedDirectly() =
+        withFixture { fixture ->
+            val linkable = fixture.repository.linkableRepositories().single()
+
+            val repoId = fixture.repository.linkRepo(linkable.owner, linkable.name, linkable.installationId)
+
+            assertEquals("octocat/notes", "${fixture.repository.linkedRepo(repoId)?.owner}/${fixture.repository.linkedRepo(repoId)?.name}")
+        }
 }
