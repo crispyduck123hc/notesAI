@@ -45,6 +45,10 @@ CREATE TABLE SyncOutbox (
     enqueuedAt INTEGER NOT NULL,
     attempts INTEGER NOT NULL DEFAULT 0,
     lastError TEXT,
+    -- The hash of the content this device last tried to upload. If the remote file holds exactly that text on a
+    -- later pass, the file is this device's own write whose response was lost — the app was closed or killed
+    -- mid-request — and it must be adopted rather than treated as somebody else's edit.
+    contentHash TEXT,
     PRIMARY KEY (entityType, entityUuid)
 );
 
@@ -189,9 +193,14 @@ DELETE FROM AppMetadata WHERE key = ?;
 
 -- ---- Sync: outbox ---------------------------------------------------------
 
+-- Inserted once; a later edit only moves the timestamp (see refreshOutbox). REPLACE here would erase the retry
+-- count, the last error and the recorded upload attempt every time the note is touched.
 enqueueOutbox:
-INSERT OR REPLACE INTO SyncOutbox(entityType, entityUuid, enqueuedAt, attempts, lastError)
+INSERT OR IGNORE INTO SyncOutbox(entityType, entityUuid, enqueuedAt, attempts, lastError)
 VALUES (?, ?, ?, 0, NULL);
+
+refreshOutbox:
+UPDATE SyncOutbox SET enqueuedAt = ? WHERE entityType = ? AND entityUuid = ?;
 
 selectOutbox:
 SELECT * FROM SyncOutbox ORDER BY enqueuedAt;
@@ -202,6 +211,12 @@ DELETE FROM SyncOutbox WHERE entityType = ? AND entityUuid = ?;
 recordOutboxAttempt:
 UPDATE SyncOutbox
 SET attempts = attempts + 1, lastError = ?
+WHERE entityType = ? AND entityUuid = ?;
+
+-- Written before the request goes out, so the attempt survives the process being killed mid-upload.
+recordUploadAttempt:
+UPDATE SyncOutbox
+SET contentHash = ?
 WHERE entityType = ? AND entityUuid = ?;
 
 -- ---- Sync: baseline -------------------------------------------------------

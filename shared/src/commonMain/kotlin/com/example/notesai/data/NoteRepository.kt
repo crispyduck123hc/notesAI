@@ -258,7 +258,11 @@ class NoteRepository(
         entityType: String,
         entityUuid: String,
     ) {
-        queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = now())
+        val timestamp = now()
+        queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = timestamp)
+        // A second edit must not erase the retry count, the last error or the recorded upload attempt; it only means
+        // the change is newer than the last settle window.
+        queries.refreshOutbox(enqueuedAt = timestamp, entityType = entityType, entityUuid = entityUuid)
     }
 
     // ---- Sync: baseline ---------------------------------------------------
@@ -416,8 +420,33 @@ class NoteRepository(
     ): Boolean = queries.selectUnresolvedConflict(entityType, entityUuid).executeAsOneOrNull() != null
 
     /**
-     * Records a failed push against that record. The queue entry stays, so the next sync
-     * retries — the counter is there to make "this keeps failing" visible rather than silent.
+     * Records the content this device is about to upload.
+     *
+     * Written *before* the request goes out, so the attempt survives the process being killed mid-upload. A later
+     * pass compares it with what the remote file holds: if they match, the file is this device's own write whose
+     * response never arrived, not somebody else's edit.
+     */
+    fun recordUploadAttempt(
+        entityType: String,
+        entityUuid: String,
+        content: String,
+    ) {
+        queries.recordUploadAttempt(
+            contentHash = contentHash(content),
+            entityType = entityType,
+            entityUuid = entityUuid,
+        )
+    }
+
+    /** The hash of the content this device last tried to upload, or null when it has not tried since the last edit. */
+    fun attemptedUpload(
+        entityType: String,
+        entityUuid: String,
+    ): String? = queries.selectOutboxEntry(entityType, entityUuid).executeAsOneOrNull()?.contentHash
+
+    /**
+     * Records a failed push against that record. The queue entry stays, so the next sync retries — the counter is
+     * there to make "this keeps failing" visible rather than silent.
      */
     fun recordOutboxAttempt(
         entityType: String,

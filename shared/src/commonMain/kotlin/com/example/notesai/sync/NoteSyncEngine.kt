@@ -2,6 +2,7 @@ package com.example.notesai.sync
 
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.data.contentHash
 import com.example.notesai.data.noteTitle
 import com.example.notesai.db.SyncBaseline
 import kotlinx.coroutines.CancellationException
@@ -411,6 +412,15 @@ class NoteSyncEngine(
 
     private suspend fun push(decision: Decision): Boolean {
         val content = contentFor(decision.entityType, decision.uuid) ?: return false
+        // Written down before the request: if the app is closed or killed while the upload is in flight, the next
+        // launch needs to know what was being sent in order to recognise its own write.
+        //
+        // The note's *text* is fingerprinted, not the encoded payload: the payload also carries `updatedAt` and
+        // `parentUuid`, which change for reasons that have nothing to do with "did my text land" (a move, a re-pull),
+        // and the comparison on the other side is against the note's text. Fingerprinting the payload made the two
+        // sides hash different things, so the check could never match.
+        val fingerprint = repository.noteByUuid(decision.uuid)?.content ?: content
+        repository.recordUploadAttempt(decision.entityType, decision.uuid, fingerprint)
         val entry =
             if (decision.remote == null) {
                 remote.create(fileNameFor(decision.entityType, decision.uuid), content)
@@ -581,6 +591,8 @@ class NoteSyncEngine(
             return Resolution(ConflictOutcome.NONE, published = 1)
         }
 
+        settleOwnLandedUpload(decision, local.content, remoteFile.content, entry)?.let { return it }
+
         // Both sides changed, but to the same text: a copy would preserve nothing, and keeping one
         // is how a note becomes a duplicate of itself. This is reachable with one person editing —
         // two writers uploading identical content each bump the remote version without changing
@@ -679,6 +691,36 @@ class NoteSyncEngine(
         val result = runCatching { block() }
         result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         return result.getOrNull()
+    }
+
+    /**
+     * Settles the case where the remote file holds the text this device last tried to upload.
+     *
+     * That file is this device's own write, whose response never arrived — the window was closed, or the process was
+     * killed, mid-request. The baseline was therefore left behind, and treating the file as somebody else's edit is
+     * what kept producing copies of the same note after a restart: every later edit looked concurrent with it.
+     *
+     * Returns null when the remote is not ours, so the caller carries on to a real conflict.
+     */
+    @Suppress("ReturnCount") // "not ours", "already current", "ours but stale" are three answers
+    private suspend fun settleOwnLandedUpload(
+        decision: Decision,
+        localContent: String,
+        remoteContent: String,
+        entry: RemoteEntry,
+    ): Resolution? {
+        val attempted = repository.attemptedUpload(EntityType.NOTE, decision.uuid) ?: return null
+        if (contentHash(remoteContent) != attempted) return null
+
+        if (remoteContent == localContent) {
+            // Nothing left to send: the file already says what the note says.
+            repository.setBaseline(EntityType.NOTE, decision.uuid, entry.fileId, entry.version)
+            repository.clearOutbox(EntityType.NOTE, decision.uuid)
+            return Resolution(ConflictOutcome.NONE, published = 0)
+        }
+        // The note has moved on since that upload; publish the newer text over our own older one.
+        push(decision)
+        return Resolution(ConflictOutcome.NONE, published = 1)
     }
 
     // ---- Helpers -----------------------------------------------------------
