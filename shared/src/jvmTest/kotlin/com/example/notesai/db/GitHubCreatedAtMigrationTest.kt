@@ -66,6 +66,7 @@ class GitHubCreatedAtMigrationTest {
 
     @Test
     fun theCurrentSchemaIsOneVersionPastTheMigration() {
-        assertEquals(6, NotesDatabase.Schema.version, "five migrations, so the schema version is six")
+        // Each .sqm is one upgrade, so the version is the number of migrations plus one.
+        assertEquals(7, NotesDatabase.Schema.version, "six migrations, so the schema version is seven")
     }
 }

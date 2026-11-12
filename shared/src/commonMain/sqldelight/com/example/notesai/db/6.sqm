@@ -1,0 +1,7 @@
+-- 6.sqm : v6 -> v7
+--
+-- The outbox remembers which text this device last tried to upload. A landed upload whose response never arrived
+-- (the window was closed, or the process was killed, mid-request) left the baseline behind the remote file, and the
+-- next pass read its own write as somebody else's edit and copied the note. Recording the attempt makes that case
+-- recognisable after a restart, not only while a pass is still running.
+ALTER TABLE SyncOutbox ADD COLUMN contentHash TEXT;
