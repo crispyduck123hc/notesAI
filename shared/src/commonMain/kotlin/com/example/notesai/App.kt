@@ -29,7 +29,6 @@ import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
-import com.example.notesai.sync.REQUEST_TIMEOUT_MILLIS
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.notes.NotesScreen
 import com.example.notesai.ui.notes.SyncUiState
@@ -79,14 +78,13 @@ fun App(
      * must not disturb the other.
      */
     gitHubTokenStore: TokenStore,
-    // Desktop supplies a remembered instance so its window-close handler can drain the queue.
-    // Mobile has no equivalent hook, so the default is simply never used there.
-    exitFlush: ExitFlush = remember { ExitFlush() },
+    // Desktop supplies a remembered instance, so its window-close handler can commit the open editor's unsaved
+    // text. Mobile has no interceptable quit, so the default is never asked to commit anything there.
+    pendingEdit: PendingEdit = remember { PendingEdit() },
 ) {
-    // Explicit timeouts rather than the defaults: the shutdown flush has a ceiling of its own, and it has to
-    // be longer than these so a flush is cancelled *between* requests rather than in the middle of an upload
-    // the server may already have accepted. A half-finished write is what leaves the next launch unsure
-    // whether a note reached Drive, and that uncertainty is what turned into duplicate notes.
+    // Explicit timeouts rather than the defaults: a request that never returns holds a sync pass open forever, and
+    // hangs are the failure mode that looks like "sync does nothing". Ten seconds is long enough for a small JSON
+    // file on a poor connection and short enough that a stalled pass is retried rather than waited on.
     val http =
         remember {
             HttpClient {
@@ -158,7 +156,7 @@ fun App(
                     driverFactory = driverFactory,
                     http = http,
                     accessToken = auth::accessToken,
-                    exitFlush = exitFlush,
+                    pendingEdit = pendingEdit,
                     gitHubAuth = gitHubAuth,
                     gitHubLogin = gitHubLogin,
                     onConnectGitHub = {
@@ -194,7 +192,7 @@ private fun AccountNotes(
     driverFactory: DatabaseDriverFactory,
     http: HttpClient,
     accessToken: suspend () -> String?,
-    exitFlush: ExitFlush,
+    pendingEdit: PendingEdit,
     gitHubAuth: GitHubAuthManager,
     gitHubLogin: String?,
     onConnectGitHub: suspend () -> Unit,
@@ -253,16 +251,13 @@ private fun AccountNotes(
         )
     }
 
-    suspend fun runSync(
-        pushSettleMillis: Long = PUSH_SETTLE_MILLIS,
-        deadlineMillis: Long? = null,
-    ) {
+    suspend fun runSync(pushSettleMillis: Long = PUSH_SETTLE_MILLIS) {
         syncState = SyncUiState.Running
         syncState =
             if (accountMismatch) {
                 SyncUiState.Failed(ACCOUNT_MISMATCH_MESSAGE)
             } else {
-                val outcome = describeSync(syncEngine, repository, pushSettleMillis, deadlineMillis)
+                val outcome = describeSync(syncEngine, repository, pushSettleMillis)
                 if (outcome.error == null) {
                     SyncUiState.Done(outcome.summary)
                 } else {
@@ -271,17 +266,10 @@ private fun AccountNotes(
             }
     }
 
-    // Offer this account's outbox to the exit path. Unregistering before closing matters: the
-    // flush touches the repository, and the process may be on its way out.
+    // The exit path writes through the editor, never through this screen: by the time a quit is in progress the
+    // composition is being torn down, so all the screen owns here is closing the connection.
     DisposableEffect(scopeName) {
-        exitFlush.register(
-            pendingCount = { repository.pendingOutbox().size },
-            flush = { deadline -> runSync(pushSettleMillis = 0L, deadlineMillis = deadline) },
-        )
-        onDispose {
-            exitFlush.unregister()
-            repository.close()
-        }
+        onDispose { repository.close() }
     }
 
     // On sign-in and on cold start, so a fresh device populates itself immediately. This one
@@ -333,6 +321,7 @@ private fun AccountNotes(
             }
         },
         onSignOut = onSignOut,
+        pendingEdit = pendingEdit,
     )
 }
 
@@ -355,11 +344,10 @@ private suspend fun describeSync(
     engine: NoteSyncEngine,
     repository: NoteRepository,
     pushSettleMillis: Long,
-    deadlineMillis: Long? = null,
 ): SyncOutcome {
     val result =
         try {
-            engine.sync(pushSettleMillis = pushSettleMillis, deadlineMillis = deadlineMillis)
+            engine.sync(pushSettleMillis = pushSettleMillis)
         } catch (t: Throwable) {
             val detail = t.message ?: t.toString()
             // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the

@@ -352,4 +352,33 @@ class NotesScreenTest {
                 fixture.close()
             }
         }
+
+    @Test
+    fun quittingWritesTheOpenNoteAndItsOutboxRow() =
+        runComposeUiTest {
+            val fixture = ScreenFixture()
+            try {
+                val id = fixture.repository.addNote("first line", NoteRepository.ROOT_FOLDER_ID)
+                setContent { fixture.Screen() }
+
+                waitUntil(timeoutMillis = 5_000) {
+                    onAllNodesWithText("first line").fetchSemanticsNodes().isNotEmpty()
+                }
+                onNodeWithText("first line").performClick()
+                onNode(hasSetTextAction()).performClick()
+                onNode(hasSetTextAction()).performTextInput(" edited")
+
+                // This is the whole of what a quit does: one synchronous local write, no waiting and no network.
+                fixture.pendingEdit.commit()
+
+                val note = fixture.repository.noteById(id)
+                assertTrue(note?.content?.contains("edited") == true, "the last keystrokes survived the quit: ${note?.content}")
+                assertTrue(
+                    fixture.repository.pendingOutbox().any { it.entityUuid == note?.uuid },
+                    "and the same transaction queued it for delivery",
+                )
+            } finally {
+                fixture.close()
+            }
+        }
 }

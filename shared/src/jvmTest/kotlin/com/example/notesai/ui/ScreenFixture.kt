@@ -2,6 +2,7 @@ package com.example.notesai.ui
 
 import androidx.compose.runtime.Composable
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.example.notesai.PendingEdit
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.db.NotesDatabase
@@ -39,6 +40,9 @@ internal class ScreenFixture {
 
     fun close() = server.close()
 
+    /** What the desktop window hands to the screen; a test can commit it to model quitting. */
+    val pendingEdit = PendingEdit()
+
     @Composable
     fun Screen(
         gitHubLogin: String? = "octocat",
@@ -60,6 +64,7 @@ internal class ScreenFixture {
             onRetrySync = {},
             onResolveConflict = { _, _ -> },
             onSignOut = onSignOut,
+            pendingEdit = pendingEdit,
         )
     }
 }

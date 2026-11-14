@@ -80,8 +80,6 @@ private data class PendingFolder(
 class NoteSyncEngine(
     private val repository: NoteRepository,
     private val remote: SyncRemote,
-    /** Injected so a test can run the clock forward mid-pass; production always uses the wall clock. */
-    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val syncMutex = Mutex()
 
@@ -97,27 +95,12 @@ class NoteSyncEngine(
     suspend fun sync(
         pushSettleMillis: Long = 0L,
         nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
-        deadlineMillis: Long? = null,
-    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis, deadlineMillis) }
+    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis) }
 
-    /**
-     * True when there is no longer enough of [deadlineMillis] left for one request to complete.
-     *
-     * Checked *after* the mutex is taken, which is the whole point: the wait for a pass already in progress is
-     * time the caller's budget does not get back, and only here is the real remainder known. With no deadline
-     * (every pass except the shutdown flush) the answer is always yes.
-     */
-    private fun hasTimeForARequest(deadlineMillis: Long?): Boolean = deadlineMillis == null || deadlineMillis - clock() >= MINIMUM_PASS_BUDGET_MILLIS
-
-    @Suppress("LongParameterList") // three knobs, all of them meaningful at a call site
     private suspend fun syncPass(
         pushSettleMillis: Long,
         nowMillis: Long,
-        deadlineMillis: Long?,
     ): SyncResult {
-        // Nothing started: starting a request that cannot finish is what makes the next launch unsure whether a
-        // note reached Drive. The queue keeps the work; the next pass delivers it.
-        if (!hasTimeForARequest(deadlineMillis)) return SyncResult(0, 0, 0, 0)
         val entriesByUuid =
             remote
                 .list()
@@ -161,8 +144,8 @@ class NoteSyncEngine(
 
         // Folders before notes so a pulled note can resolve its parent, and pulls before pushes so remote
         // structure exists before we write against it.
-        val folderPhase = runPhase(folders, deadlineMillis)
-        val notePhase = runPhase(notes, deadlineMillis)
+        val folderPhase = runPhase(folders)
+        val notePhase = runPhase(notes)
 
         val purged = purgeExpiredTombstones()
         return SyncResult(
@@ -193,7 +176,6 @@ class NoteSyncEngine(
      */
     private suspend fun runPhase(
         decisions: List<Decision>,
-        deadlineMillis: Long?,
     ): PhaseResult {
         val isFolder = decisions.firstOrNull()?.entityType == EntityType.FOLDER
         var pulled = if (isFolder) pullFolders(decisions.filter { it.action == Action.PULL }) else pullNotes(decisions.filter { it.action == Action.PULL })
@@ -203,7 +185,6 @@ class NoteSyncEngine(
         var failed = 0
 
         for (decision in decisions) {
-            if (!hasTimeForARequest(deadlineMillis)) break
             try {
                 val step = apply(decision)
                 pulled += step.pulled

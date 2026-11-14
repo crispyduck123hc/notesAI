@@ -74,8 +74,14 @@ Some decisions worth knowing about:
 | Detecting what changed | A per-record **baseline** (the remote revision last seen), not timestamps. Absence from Drive is never treated as a deletion on its own |
 | Uploading | Local changes wait out a short settle window (1 minute) so a burst of typing becomes one upload. Pulls are never delayed |
 
-Sync runs when the app starts, when the window regains focus, every 60 seconds, and when you close
-the window on desktop (a best-effort flush). There is no sync button — it is meant to be invisible.
+Sync runs when the app starts, when the window regains focus, and every 60 seconds. There is no sync
+button — it is meant to be invisible.
+
+Quitting does not wait for the network. Closing the window writes the open editor's unsaved text in a
+single local transaction — the note and its outbox row together — and exits. The outbox is the
+durable record of what is owed, so anything not yet uploaded is delivered by the next pass, on this
+device or on the next launch. A write whose request reached Drive without an acknowledgement is
+recognised as the app's own when the next pass finds the file holding the text it sent.
 
 Each pass settles the remote first and then pushes local state, folders before notes.
 
@@ -223,7 +229,8 @@ Sign-in tokens are stored in the platform's credential store:
 
 To start over completely: **Sign out** in the sidebar, then delete the database file for that
 account. Notes that were synced stay in your Drive and will come back on the next pull; anything
-never uploaded is gone, so quit the app first and let it finish syncing.
+never uploaded is gone, so sync it (focus the window, or wait for the 60-second pass) before deleting
+anything.
 
 ---
 
