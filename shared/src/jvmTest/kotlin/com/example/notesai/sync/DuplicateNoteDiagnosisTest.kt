@@ -376,4 +376,54 @@ class DuplicateNoteDiagnosisTest {
                 "and the newer text was published over our own older one",
             )
         }
+
+    @Test
+    fun theDebouncedWriteAndTheQuitWriteQueueOneUpload() =
+        runBlocking {
+            // A debounce that fires just before the quit, then the quit's own write: two calls, same text.
+            val remote = InMemoryRemote()
+            val local = device()
+            val noteId = local.addNote("first line", NoteRepository.ROOT_FOLDER_ID)
+            local.sync(remote)
+            local.updateNote(noteId, "first line\nedited")
+            val afterDebounce = local.pendingOutbox().single()
+
+            // Far enough apart that a refresh would be visible: without this the two writes can land in the same
+            // millisecond and the assertion below would pass even if the note were written twice.
+            kotlinx.coroutines.delay(5)
+            local.updateNote(noteId, "first line\nedited") // what the quit commits
+            val afterQuit = local.pendingOutbox().single()
+
+            assertEquals(1, local.pendingOutbox().size, "one queue record, never two")
+            assertEquals(
+                afterDebounce.enqueuedAt,
+                afterQuit.enqueuedAt,
+                "identical text is not an edit: the queue was not refreshed",
+            )
+
+            val result = local.sync(remote)
+            assertEquals(1, result.pushed, "and it is uploaded once")
+            assertEquals(0, local.pendingOutbox().size)
+        }
+
+    @Test
+    fun aQuitAfterTypingAgainStillQueuesOneUpload() =
+        runBlocking {
+            // The other order: the debounce lands "edited", the quit commits more text. One record, refreshed.
+            val remote = InMemoryRemote()
+            val local = device()
+            val noteId = local.addNote("first line", NoteRepository.ROOT_FOLDER_ID)
+            local.sync(remote)
+            local.updateNote(noteId, "first line\nedited")
+            local.updateNote(noteId, "first line\nedited twice")
+
+            assertEquals(1, local.pendingOutbox().size, "still one record for one note")
+            val result = local.sync(remote)
+            assertEquals(1, result.pushed, "one upload, carrying the newest text")
+            val uuid = local.noteById(noteId)!!.uuid
+            assertEquals(
+                "first line\nedited twice",
+                decodeNoteFile(remote.contentOf(noteFileName(uuid))!!).content,
+            )
+        }
 }

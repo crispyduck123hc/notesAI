@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.notesai.PendingEdit
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
@@ -48,6 +49,8 @@ internal fun NotesScreen(
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
+    /** Where the open editor offers its unsaved text, so a quit never loses the last keystrokes. */
+    pendingEdit: PendingEdit,
 ) {
     val folders by repository.allFolders.collectAsState(initial = emptyList())
     val notes by repository.allNotes.collectAsState(initial = emptyList())
@@ -182,6 +185,7 @@ internal fun NotesScreen(
 
         NoteEditorPane(
             document = selectedDocument,
+            pendingEdit = pendingEdit,
             onChange = { text ->
                 when (val ref = state.selectedRef) {
                     is NoteRef.Local -> selectedNote?.let { repository.updateNote(it.id, text) }

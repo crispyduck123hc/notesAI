@@ -32,6 +32,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import com.example.notesai.PendingEdit
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.theme.Dimens
@@ -53,6 +54,7 @@ private const val WRITE_DEBOUNCE_MS = 300L
 @Composable
 internal fun NoteEditorPane(
     document: NoteDocument?,
+    pendingEdit: PendingEdit,
     onChange: (String) -> Unit,
     /** Null for local notes, which have no state to toggle. */
     onToggleComplete: (() -> Unit)? = null,
@@ -86,8 +88,16 @@ internal fun NoteEditorPane(
     // Flush the pending text when switching notes or leaving the screen. `textState`
     // and `onChange` are captured from the composition where this effect launched, so
     // the flush targets the note that was actually being edited.
+    //
+    // The same write is offered to the exit path, which cannot wait for the debounce and cannot wait for this
+    // composition to be disposed either: quitting runs it synchronously, which is one local transaction and no
+    // network call.
     DisposableEffect(document.ref) {
-        onDispose { onChange(textState.value.text) }
+        pendingEdit.offer { onChange(textState.value.text) }
+        onDispose {
+            pendingEdit.withdraw()
+            onChange(textState.value.text)
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

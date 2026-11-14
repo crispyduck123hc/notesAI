@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.example.notesai.PendingEdit
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.model.NoteRef
 import kotlin.test.Test
@@ -39,6 +40,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "first line", content = "first line\nbody"),
                     onChange = {},
                 )
@@ -51,7 +53,7 @@ class NoteEditorPaneTest {
     fun noDocumentShowsThePlaceholder() =
         runComposeUiTest {
             setContent {
-                NoteEditorPane(document = null, onChange = {})
+                NoteEditorPane(pendingEdit = PendingEdit(), document = null, onChange = {})
             }
 
             onNodeWithText("Select or create a note").assertExists()
@@ -63,6 +65,7 @@ class NoteEditorPaneTest {
             val writes = mutableListOf<String>()
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "", content = ""),
                     onChange = { writes += it },
                 )
@@ -98,6 +101,7 @@ class NoteEditorPaneTest {
                         content = if (current == NoteRef.Local(1)) "one" else "two",
                     )
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = document,
                     // Closes over `document` from the composition that created it, which is exactly
                     // how NotesScreen wires the real editor.
@@ -126,6 +130,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
                     onChange = {},
                 )
@@ -143,6 +148,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
                     onChange = {},
                 )
@@ -160,6 +166,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk"),
                     onChange = {},
                 )
@@ -177,6 +184,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk\n\u2022 "),
                     onChange = {},
                 )
@@ -193,6 +201,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
                     onChange = {},
                 )
@@ -211,6 +220,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
                     onChange = {},
                 )
@@ -230,6 +240,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
                     onChange = {},
                 )
@@ -248,6 +259,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     // An empty bullet: the caret sits right after the marker's space.
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + BULLET_MARKER),
                     onChange = {},
@@ -267,6 +279,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + INDENT_UNIT + BULLET_MARKER + "milk"),
                     onChange = {},
                 )
@@ -288,6 +301,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
                     onChange = {},
                 )
@@ -308,6 +322,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
                     onChange = {},
                 )
@@ -325,6 +340,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
                     onChange = {},
                 )
@@ -341,6 +357,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
                     onChange = {},
                 )
@@ -358,6 +375,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = DASH_MARKER + "milk"),
                     onChange = {},
                 )
@@ -374,6 +392,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "step"),
                     onChange = {},
                 )
@@ -390,6 +409,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
                     onChange = {},
                 )
@@ -408,6 +428,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = NUMBERED_MARKER + "step"),
                     onChange = {},
                 )
@@ -424,6 +445,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
                     onChange = {},
                 )
@@ -441,6 +463,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
                     onChange = {},
                 )
@@ -458,6 +481,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_DONE + "milk"),
                     onChange = {},
                 )
@@ -474,6 +498,7 @@ class NoteEditorPaneTest {
         runComposeUiTest {
             setContent {
                 NoteEditorPane(
+                    pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
                     onChange = {},
                 )
@@ -487,5 +512,53 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk"))
+        }
+
+    @Test
+    fun theUnsavedTextIsOfferedToWhoeverEndsTheProcess() =
+        runComposeUiTest {
+            // Decisive on purpose: nothing is typed, so the debounce never writes, and the only way `writes` can
+            // hold anything is that the editor offered its buffer and the exit path ran it.
+            val writes = mutableListOf<String>()
+            val pendingEdit = PendingEdit()
+
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = pendingEdit,
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "first", content = "first\nbody"),
+                    onChange = { writes += it },
+                )
+            }
+
+            pendingEdit.commit()
+
+            assertEquals(listOf("first\nbody"), writes, "quitting should write the open buffer synchronously")
+        }
+
+    @Test
+    fun aPaneThatIsGoneIsNotWrittenIntoAtAQuit() =
+        runComposeUiTest {
+            val writes = mutableListOf<String>()
+            val pendingEdit = PendingEdit()
+            var showing by mutableStateOf(true)
+
+            setContent {
+                if (showing) {
+                    NoteEditorPane(
+                        pendingEdit = pendingEdit,
+                        document = NoteDocument(ref = NoteRef.Local(1), title = "first", content = "first"),
+                        onChange = { writes += it },
+                    )
+                }
+            }
+
+            // Disposing the pane flushes it once (the existing behaviour) and withdraws it, so a later commit adds
+            // nothing: the repository may already be closed by then.
+            showing = false
+            waitForIdle()
+            val afterDispose = writes.size
+            pendingEdit.commit()
+
+            assertEquals(afterDispose, writes.size, "a disposed editor must not write again: $writes")
         }
 }
