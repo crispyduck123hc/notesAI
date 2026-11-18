@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -29,6 +30,7 @@ import com.example.notesai.github.GitHubClient
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.sync.DriveRemote
 import com.example.notesai.sync.NoteSyncEngine
+import com.example.notesai.sync.SyncWakeup
 import com.example.notesai.ui.LoginScreen
 import com.example.notesai.ui.notes.NotesScreen
 import com.example.notesai.ui.notes.SyncUiState
@@ -38,16 +40,38 @@ import com.example.notesai.update.AvailableUpdate
 import com.example.notesai.update.UpdateChecker
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
- * Automatic syncs hold local changes back this long. A burst of edits — or simply typing in a
- * note — then coalesces into a single push instead of one per pause, and two devices are far
- * less likely to be writing the same record at the same moment. Nothing is lost meanwhile:
- * the change sits in the durable outbox.
+ * How long a record must have been quiet before an automatic sync publishes it. A burst of edits — or simply typing
+ * in a note — then coalesces into a single push instead of one per pause, and two devices are far less likely to be
+ * writing the same record at the same moment. Nothing is lost meanwhile: the change sits in the durable outbox.
+ *
+ * Ten seconds, not a minute. The window only needs to outlast a pause in typing (people pause for 2-10s mid-sentence,
+ * and the editor's own write debounce is 300ms), and it is now the dominant term in delivery latency: a push cannot
+ * happen until the window has passed. For comparison, y-websocket, the reference Yjs sync provider, defaults its
+ * callback debounce to 2000ms with a 10s maximum wait.
  */
-private const val PUSH_SETTLE_MILLIS = 1 * 60_000L
+private const val PUSH_SETTLE_MILLIS = 10_000L
+
+/**
+ * Publish a record after this long even if it never went quiet. Continuous typing moves the settle window's clock
+ * (`enqueuedAt`) with every edit, so without a maximum wait a note being typed into for an hour would never leave the
+ * device. Ten seconds means "at most one upload per ten seconds of continuous writing".
+ */
+private const val PUSH_MAX_WAIT_MILLIS = 10_000L
+
+/**
+ * How long a wake-up waits before starting a pass, so a burst of queue changes is one pass rather than several.
+ *
+ * Deliberately shorter than the settle window: the first pass of a burst is there to pull and to publish anything
+ * already stale, so making the caller wait a full window before even looking would defeat the point.
+ */
+private const val SYNC_WAKE_QUIET_MILLIS = 1_500L
 
 /** How often to look for changes made on other devices while the app is open. */
 private const val PERIODIC_SYNC_MILLIS = 60_000L
@@ -253,17 +277,25 @@ private fun AccountNotes(
 
     suspend fun runSync(pushSettleMillis: Long = PUSH_SETTLE_MILLIS) {
         syncState = SyncUiState.Running
-        syncState =
-            if (accountMismatch) {
-                SyncUiState.Failed(ACCOUNT_MISMATCH_MESSAGE)
-            } else {
-                val outcome = describeSync(syncEngine, repository, pushSettleMillis)
-                if (outcome.error == null) {
-                    SyncUiState.Done(outcome.summary)
+        val next =
+            try {
+                if (accountMismatch) {
+                    SyncUiState.Failed(ACCOUNT_MISMATCH_MESSAGE)
                 } else {
-                    SyncUiState.Failed(summary = outcome.summary, detail = outcome.error)
+                    val outcome = describeSync(syncEngine, repository, pushSettleMillis, PUSH_MAX_WAIT_MILLIS)
+                    if (outcome.error == null) {
+                        SyncUiState.Done(outcome.summary)
+                    } else {
+                        SyncUiState.Failed(summary = outcome.summary, detail = outcome.error)
+                    }
                 }
+            } catch (cancellation: CancellationException) {
+                // The screen was torn down (sign-out, account switch, window closed) while the pass was running.
+                // Leaving "Syncing..." would be the only trace, and it would be a lie: nothing failed.
+                if (syncState == SyncUiState.Running) syncState = SyncUiState.Idle
+                throw cancellation
             }
+        syncState = next
     }
 
     // The exit path writes through the editor, never through this screen: by the time a quit is in progress the
@@ -279,13 +311,29 @@ private fun AccountNotes(
 
     // Returning to the window is the natural moment to catch up, and it replaces the explicit
     // sync button. It respects the settle window so alt-tabbing doesn't spam uploads.
+    // Collected rather than keyed on the focus value: `LaunchedEffect(windowFocused)` is cancelled and restarted
+    // whenever the window gains or loses focus, which cancels a pass in flight and reports it as a failure
+    // ("The coroutine scope left the composition"). Collecting keeps one long-lived effect, so a pass finishes.
     val windowFocused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(windowFocused) {
-        if (windowFocused && !accountMismatch) runSync()
+    LaunchedEffect(scopeName) {
+        if (accountMismatch) return@LaunchedEffect
+        snapshotFlow { windowFocused }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { runSync() }
     }
 
-    // A slow tick: picks up other devices' work, and eventually pushes the backlog. There is
-    // deliberately no per-edit trigger — with the settle window it would fire and do nothing.
+    // A pass is also started by the queue becoming non-empty. This is an additional trigger, not a bypass: the settle
+    // window and the maximum wait still decide what a pass may publish, and this only decides when to look. It cannot
+    // replace the tick below, because the outbox says nothing about other devices' writes.
+    LaunchedEffect(scopeName, syncEngine) {
+        if (accountMismatch) return@LaunchedEffect
+        SyncWakeup(settleMillis = PUSH_SETTLE_MILLIS, quietMillis = SYNC_WAKE_QUIET_MILLIS)
+            .wakes(repository.outboxCount)
+            .collect { runSync() }
+    }
+
+    // A slow tick: picks up other devices' work, and eventually pushes the backlog.
     LaunchedEffect(scopeName) {
         if (accountMismatch) return@LaunchedEffect
         while (true) {
@@ -330,7 +378,7 @@ private fun AccountNotes(
  * when there was one. The two are kept apart because they belong in different places — the
  * line goes in the sidebar, the detail goes in a dialog the reader can copy from.
  */
-private class SyncOutcome(
+internal class SyncOutcome(
     val summary: String,
     val error: String? = null,
 )
@@ -340,14 +388,19 @@ private class SyncOutcome(
  * decision. Failures are reported rather than thrown, so a network problem doesn't take the
  * UI down.
  */
-private suspend fun describeSync(
+internal suspend fun describeSync(
     engine: NoteSyncEngine,
     repository: NoteRepository,
     pushSettleMillis: Long,
+    pushMaxWaitMillis: Long,
 ): SyncOutcome {
     val result =
         try {
-            engine.sync(pushSettleMillis = pushSettleMillis)
+            engine.sync(pushSettleMillis = pushSettleMillis, pushMaxWaitMillis = pushMaxWaitMillis)
+        } catch (cancellation: CancellationException) {
+            // Not a failure: the caller's scope ended. Must propagate, or a cancelled pass is shown to the user as
+            // "Sync failed: The coroutine scope left the composition" — the message Compose uses for exactly this.
+            throw cancellation
         } catch (t: Throwable) {
             val detail = t.message ?: t.toString()
             // Also to stdout: the sidebar says "Sync failed", and whoever is debugging wants the

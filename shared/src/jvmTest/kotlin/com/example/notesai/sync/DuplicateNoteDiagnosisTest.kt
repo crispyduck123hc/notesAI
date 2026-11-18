@@ -5,6 +5,7 @@ import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.db.NotesDatabase
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,6 +28,17 @@ class DuplicateNoteDiagnosisTest {
     }
 
     private suspend fun NoteRepository.sync(remote: SyncRemote) = NoteSyncEngine(this, remote).sync()
+
+    private suspend fun NoteRepository.sync(
+        remote: SyncRemote,
+        pushSettleMillis: Long,
+        pushMaxWaitMillis: Long = Long.MAX_VALUE,
+        nowMillis: Long,
+    ) = NoteSyncEngine(this, remote).sync(
+        pushSettleMillis = pushSettleMillis,
+        pushMaxWaitMillis = pushMaxWaitMillis,
+        nowMillis = nowMillis,
+    )
 
     /** A remote whose uploads land but then report failure — the "timed out after the server took it" case. */
     private class LandsThenFailsRemote(
@@ -425,5 +437,71 @@ class DuplicateNoteDiagnosisTest {
                 "first line\nedited twice",
                 decodeNoteFile(remote.contentOf(noteFileName(uuid))!!).content,
             )
+        }
+
+    @Test
+    fun aNoteThatKeepsChangingIsStillPublishedByTheMaximumWait() =
+        runBlocking {
+            // The settle window alone starves this case: every edit moves `enqueuedAt`, so a note typed into
+            // continuously is never "quiet". The maximum wait is written once, on insert, and is what bounds it.
+            val remote = InMemoryRemote()
+            val local = device()
+            val noteId = local.addNote("line", NoteRepository.ROOT_FOLDER_ID)
+            local.sync(remote)
+
+            local.updateNote(noteId, "line 1")
+            // Time is simulated from the row's own maximum-wait clock, so the assertion does not depend on how fast
+            // this test runs: an edit every simulated second, always fresher than the 60 s settle window.
+            val base = local.pendingOutbox().single().firstPendingAt
+            val pushSecond =
+                (2..40).firstOrNull { second ->
+                    local.updateNote(noteId, "line $second")
+                    local
+                        .sync(
+                            remote = remote,
+                            pushSettleMillis = 60_000L,
+                            pushMaxWaitMillis = 10_000L,
+                            nowMillis = base + second * 1_000L,
+                        ).pushed > 0
+                }
+
+            assertEquals(10, pushSecond, "published when the oldest unsent edit turned 10 s old")
+        }
+
+    @Test
+    fun withoutAMaximumWaitNothingIsPublishedWhileTheNoteKeepsChanging() =
+        runBlocking {
+            val remote = InMemoryRemote()
+            val local = device()
+            val noteId = local.addNote("line", NoteRepository.ROOT_FOLDER_ID)
+            local.sync(remote)
+
+            local.updateNote(noteId, "line 1")
+            val base = local.pendingOutbox().single().firstPendingAt
+            val pushSecond =
+                (2..40).firstOrNull { second ->
+                    local.updateNote(noteId, "line $second")
+                    local
+                        .sync(
+                            remote = remote,
+                            pushSettleMillis = 60_000L,
+                            nowMillis = base + second * 1_000L,
+                        ).pushed > 0
+                }
+
+            assertNull(pushSecond, "a pure settle window never expires while the note keeps changing")
+        }
+
+    @Test
+    fun theOutboxCountIsWhatTheWakeUpWatches() =
+        runBlocking {
+            val local = device()
+            assertEquals(0L, local.outboxCount.first(), "a fresh database owes nothing")
+
+            local.addNote("first line", NoteRepository.ROOT_FOLDER_ID)
+            assertEquals(1L, local.outboxCount.first(), "the first edit is what a wake-up can see")
+
+            local.pendingOutbox().forEach { local.clearOutbox(it.entityType, it.entityUuid) }
+            assertEquals(0L, local.outboxCount.first(), "and an emptied queue is quiet again")
         }
 }

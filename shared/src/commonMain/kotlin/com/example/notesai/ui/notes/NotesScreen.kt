@@ -186,9 +186,10 @@ internal fun NotesScreen(
         NoteEditorPane(
             document = selectedDocument,
             pendingEdit = pendingEdit,
-            onChange = { text ->
+            onChange = { text, lastTypedAtMillis ->
                 when (val ref = state.selectedRef) {
-                    is NoteRef.Local -> selectedNote?.let { repository.updateNote(it.id, text) }
+                    is NoteRef.Local ->
+                        selectedNote?.let { repository.updateNote(it.id, text, editedAtMillis = lastTypedAtMillis) }
                     is NoteRef.GitHubIssue ->
                         gitHubIssues
                             .firstOrNull { it.repoId == ref.repoId && it.number == ref.number }

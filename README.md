@@ -69,13 +69,14 @@ Some decisions worth knowing about:
 | Behaviour | How it works |
 |---|---|
 | Deletes | Soft — a tombstone is just a file carrying `deletedAt`, so deletions propagate like any other change. Tombstones are cleaned up after 30 days |
-| Editing the same note on two devices | **Keep both.** The local copy keeps its identity; the remote version comes back as a separate "conflicted copy" you can reconcile |
+| Editing the same note on two devices | **Keep both.** The local copy keeps its identity; the remote version comes back as a separate "conflicted copy" you can reconcile. Each file carries the `deviceId` that wrote it, so a write from another editor in the *same* install is recognised as this device's own and republished instead of copied |
 | Deleting on one device while editing on another | **The app asks.** These are parked in a conflict inbox, because guessing wrong loses work |
 | Detecting what changed | A per-record **baseline** (the remote revision last seen), not timestamps. Absence from Drive is never treated as a deletion on its own |
-| Uploading | Local changes wait out a short settle window (1 minute) so a burst of typing becomes one upload. Pulls are never delayed |
+| Uploading | Local changes wait out a short settle window (10 seconds) so a burst of typing becomes one upload, with a maximum wait of 10 seconds so a note being typed into continuously still leaves the device. Pulls are never delayed |
 
-Sync runs when the app starts, when the window regains focus, and every 60 seconds. There is no sync
-button — it is meant to be invisible.
+Sync runs when the app starts, when the window regains focus, when the outbox stops being empty (about a
+second later, and once more when the settle window expires), and every 60 seconds for other devices'
+changes. There is no sync button — it is meant to be invisible.
 
 Quitting does not wait for the network. Closing the window writes the open editor's unsaved text in a
 single local transaction — the note and its outbox row together — and exits. The outbox is the

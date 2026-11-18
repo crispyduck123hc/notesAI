@@ -5,8 +5,8 @@ The current schema is described by the `.sq` files under
 and are committed to version control.
 
 `NotesDatabase.Schema.version` is derived as `(number of .sqm migration files) + 1`.
-There are currently four migrations (`1.sqm` … `4.sqm`), so the current
-version is **5**.
+There are currently seven migrations (`1.sqm` … `7.sqm`), so the current
+version is **8**.
 
 ## Changing the schema
 

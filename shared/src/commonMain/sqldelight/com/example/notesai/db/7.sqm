@@ -1,0 +1,7 @@
+-- 7.sqm : v7 -> v8
+--
+-- A settle window alone starves a record that keeps changing: every edit moves `enqueuedAt`, so a note being typed
+-- into continuously is never old enough to publish. This column records when the oldest unsent edit was queued, and a
+-- pass publishes the record once either that or `enqueuedAt` is old enough. Existing rows get 0, which counts as
+-- "waited long enough" so anything already queued is not delayed by the new column.
+ALTER TABLE SyncOutbox ADD COLUMN firstPendingAt INTEGER NOT NULL DEFAULT 0;

@@ -42,6 +42,13 @@ data class NoteFile(
     val updatedAt: Long,
     val deletedAt: Long? = null,
     val conflictOf: String? = null,
+    /**
+     * Which install wrote this revision ([com.example.notesai.data.NoteRepository.deviceId]), so a conflict can tell
+     * "another writer" from "another writer *here*" -- a reloaded composition holding a stale buffer, or an older
+     * build of this app on the same machine. Null for files written before the field existed; decode treats it as
+     * unknown, which is the safe answer.
+     */
+    val deviceId: String? = null,
     val content: String,
 )
 
@@ -103,7 +110,10 @@ fun parseFileName(fileName: String): RemoteFileRef? =
 // parentUuid cannot be derived from an entity (it only knows its local folderId),
 // so the caller resolves it from the folder table before projecting.
 
-fun NoteEntity.toNoteFile(parentUuid: String): NoteFile =
+fun NoteEntity.toNoteFile(
+    parentUuid: String,
+    deviceId: String? = null,
+): NoteFile =
     NoteFile(
         uuid = uuid,
         parentUuid = parentUuid,
@@ -111,6 +121,7 @@ fun NoteEntity.toNoteFile(parentUuid: String): NoteFile =
         updatedAt = updatedAt,
         deletedAt = deletedAt,
         conflictOf = conflictOf,
+        deviceId = deviceId,
         content = content,
     )
 

@@ -94,11 +94,13 @@ class NoteSyncEngine(
      */
     suspend fun sync(
         pushSettleMillis: Long = 0L,
+        pushMaxWaitMillis: Long = Long.MAX_VALUE,
         nowMillis: Long = Clock.System.now().toEpochMilliseconds(),
-    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, nowMillis) }
+    ): SyncResult = syncMutex.withLock { syncPass(pushSettleMillis, pushMaxWaitMillis, nowMillis) }
 
     private suspend fun syncPass(
         pushSettleMillis: Long,
+        pushMaxWaitMillis: Long,
         nowMillis: Long,
     ): SyncResult {
         val entriesByUuid =
@@ -122,11 +124,18 @@ class NoteSyncEngine(
 
         // Records whose last local change is still fresh stay queued. Rows that predate the
         // outbox have no `enqueuedAt` to wait on, so they go out immediately.
+        //
+        // Two clocks, because a settle window alone never expires while a note keeps changing: `enqueuedAt` is the
+        // quiet period and moves with every edit, `firstPendingAt` is written once and is the maximum wait. A record
+        // is pushable when either is old enough, so continuous typing cannot postpone delivery indefinitely.
         val settledBefore = nowMillis - pushSettleMillis
+        val waitedLongEnoughBefore = nowMillis - pushMaxWaitMillis
         val pushable =
             buildSet {
                 addAll(unpublishedNew)
-                queued.filter { it.enqueuedAt <= settledBefore }.forEach { add(it.entityUuid) }
+                queued
+                    .filter { it.enqueuedAt <= settledBefore || it.firstPendingAt <= waitedLongEnoughBefore }
+                    .forEach { add(it.entityUuid) }
             }
 
         val decisions =
@@ -425,7 +434,13 @@ class NoteSyncEngine(
 
             else ->
                 repository.noteByUuid(uuid)?.let { note ->
-                    note.toNoteFile(parentUuid = parentUuidFor(note.folderId)).encode()
+                    // Stamped with this install's identity, so a later pass can recognise its own writes even when
+                    // the content does not match what it last sent (a stale buffer flush, an older build here).
+                    note
+                        .toNoteFile(
+                            parentUuid = parentUuidFor(note.folderId),
+                            deviceId = repository.deviceId,
+                        ).encode()
                 }
         }
 
@@ -574,14 +589,17 @@ class NoteSyncEngine(
 
         settleOwnLandedUpload(decision, local.content, remoteFile.content, entry)?.let { return it }
 
-        // Both sides changed, but to the same text: a copy would preserve nothing, and keeping one
-        // is how a note becomes a duplicate of itself. This is reachable with one person editing —
-        // two writers uploading identical content each bump the remote version without changing
-        // what the file says, so the *versions* disagree while the notes do not.
+        // Nothing to preserve, two ways:
         //
-        // Re-publish rather than only adopting the remote version, so a structural change made here
-        // (a move to another folder, say) still travels, and the baseline ends up current.
-        if (remoteFile.content == local.content) {
+        // - both sides changed to the *same* text (two writers bumping the version without changing what the file
+        //   says), so a copy would duplicate the note with itself;
+        // - the file was written by another editor in *this* install -- a reloaded composition with a stale buffer, or
+        //   an older build here. Its timestamps are exactly what cannot be trusted, so this device's own row, which is
+        //   the live editor, wins and is republished.
+        //
+        // Re-publishing rather than only adopting means a structural change made here (a move to another folder) still
+        // travels, and the baseline ends up current.
+        if (remoteFile.content == local.content || writtenByThisInstall(remoteFile)) {
             push(decision)
             return Resolution(ConflictOutcome.NONE, published = 1)
         }
@@ -594,8 +612,12 @@ class NoteSyncEngine(
         // Later edit wins, and the uuid breaks a tie, so two devices reach the same answer even
         // when the timestamps match.
         val remoteWins =
-            remoteFile.updatedAt > local.updatedAt ||
-                (remoteFile.updatedAt == local.updatedAt && remoteFile.uuid > local.uuid)
+            remoteTextWins(
+                remoteUpdatedAt = remoteFile.updatedAt,
+                localUpdatedAt = local.updatedAt,
+                remoteUuid = remoteFile.uuid,
+                localUuid = local.uuid,
+            )
 
         // Whichever text does *not* become the note is preserved as a conflicted copy, so both
         // devices end up holding the same pair rather than mirrored halves.
@@ -641,6 +663,30 @@ class NoteSyncEngine(
         )
         return Resolution(ConflictOutcome.KEEP_BOTH, published)
     }
+
+    /**
+     * Which of the two texts becomes the note. It must be **antisymmetric**: when device A compares, the remote is B's
+     * text; when B compares, the remote is A's. Comparing in the same direction on both sides (a `>=`, say) would let
+     * both devices decide they won, and each would copy the other's text — mirrored halves that disagree forever.
+     *
+     * Timestamps first, because that is "who typed last". They are often equal (the files descend from the same edit,
+     * or one device's save landed twice), so the tie-break compares uuids: a value both sides know, ordered oppositely
+     * from each side's point of view. `deviceId` is the better tie-break where it exists, but it is absent from files
+     * written before the field, so uuid is the fallback that always works.
+     */
+    internal fun remoteTextWins(
+        remoteUpdatedAt: Long,
+        localUpdatedAt: Long,
+        remoteUuid: String,
+        localUuid: String,
+    ): Boolean = remoteUpdatedAt > localUpdatedAt || (remoteUpdatedAt == localUpdatedAt && remoteUuid > localUuid)
+
+    /**
+     * Whether another editor in *this* install wrote the remote file: a reloaded composition with a stale buffer, or
+     * an older build of this app on the same machine. Files written before the field existed carry no `deviceId` and
+     * are treated as somebody else's, which is the safe answer.
+     */
+    private fun writtenByThisInstall(remoteFile: NoteFile): Boolean = remoteFile.deviceId != null && remoteFile.deviceId == repository.deviceId
 
     /**
      * After a request fails, the remote may still have applied it — a timeout says nothing about what the

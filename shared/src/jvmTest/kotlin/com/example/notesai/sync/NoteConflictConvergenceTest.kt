@@ -77,12 +77,24 @@ class NoteConflictConvergenceTest {
             a.sync(remote)
             b.sync(remote)
 
-            b.primary().let { b.updateNote(it.id, "from B") }
-            a.primary().let { a.updateNote(it.id, "from A") }
+            // Forced to the same instant. Calling `updateNote` twice on the real clock lands in different
+            // milliseconds nearly always, which is why this test used to pass with the tie-break deleted: it was not
+            // testing a tie at all.
+            val sameInstant = 1_800_000_000_000L
+            b.primary().let { b.updateNote(it.id, "from B", editedAtMillis = sameInstant) }
+            a.primary().let { a.updateNote(it.id, "from A", editedAtMillis = sameInstant) }
+            assertEquals(
+                a.primary().updatedAt,
+                b.primary().updatedAt,
+                "the precondition: the two edits really do tie on timestamp",
+            )
             a.sync(remote)
             b.sync(remote)
             a.sync(remote)
 
+            println("PROBE a: note=${a.primary().content} copies=${a.copies().map { it.content }}")
+            println("PROBE b: note=${b.primary().content} copies=${b.copies().map { it.content }}")
+            println("PROBE remote=${remote.contentOf(noteFileName(a.primary().uuid))?.let { decodeNoteFile(it).content }}")
             assertEquals(b.primary().content, a.primary().content, "both devices must pick the same text")
             assertEquals(b.copies().map { it.content }, a.copies().map { it.content }, "and the same copy")
         }
@@ -146,5 +158,120 @@ class NoteConflictConvergenceTest {
 
             assertEquals(1, b.allNotes.first().size, "identical texts must not produce a copy")
             assertEquals("same new text", b.primary().content)
+        }
+
+    @Test
+    fun aWriterWhoseTimestampIsLaterWinsEvenWhenItsTextIsOlder() =
+        runBlocking {
+            // This is the shape of a stale editor buffer being flushed: `updateNote` stamps `updatedAt = now()` on
+            // whatever text it is given, so an *older* text can carry a *later* timestamp. The tie-break compares
+            // timestamps, so that text becomes the note and the newer text is exiled to a copy.
+            //
+            // It is pinned because it explains a real incident: a note reverting to its short text while copies kept
+            // the growing text, once every settle window.
+            val remote = InMemoryRemote()
+            val a = device()
+            val noteId = a.addNote("stale text", NoteRepository.ROOT_FOLDER_ID)
+            var now = a.pendingOutbox().single().enqueuedAt + 1_000L
+            NoteSyncEngine(a, remote).sync(pushSettleMillis = 0L, nowMillis = now)
+            val uuid =
+                a.allNotes
+                    .first()
+                    .single()
+                    .uuid
+            val fileId = a.allBaselines().single().remoteFileId!!
+
+            now += 10_000L
+            a.updateNote(noteId, "stale text plus what I typed")
+
+            // Another writer publishes the older text, stamped 5 minutes later than the edit above.
+            val asAnotherWriter =
+                decodeNoteFile(remote.download(fileId))
+                    .copy(
+                        updatedAt = now + 300_000L,
+                        content = "stale text",
+                        // A different install, so this is a genuine conflict and the tie-break decides it.
+                        deviceId = "another-install",
+                    )
+            remote.update(fileId, asAnotherWriter.encode())
+
+            val result = NoteSyncEngine(a, remote).sync(pushSettleMillis = 0L, nowMillis = now + 1_000L)
+
+            assertEquals(1, result.conflictsResolved)
+            assertEquals(
+                "stale text",
+                a.allNotes
+                    .first()
+                    .single { it.conflictOf == null }
+                    .content,
+                "the later timestamp decides, not the newer text",
+            )
+            assertEquals(
+                listOf("stale text plus what I typed"),
+                a.allNotes
+                    .first()
+                    .filter { it.conflictOf != null }
+                    .map { it.content },
+                "and the text that lost is preserved as a copy",
+            )
+            assertEquals(
+                uuid,
+                a.allNotes
+                    .first()
+                    .single { it.conflictOf == null }
+                    .uuid,
+            )
+        }
+
+    @Test
+    fun aWriteFromAnotherEditorInThisInstallIsNotCopied() =
+        runBlocking {
+            // The case that produced copies every ten seconds in a hot-reload session: a second composition (or an
+            // older build of this app) publishes an older buffer, stamped later, under the *same* device id. Nothing
+            // needs preserving, so the live editor's text wins and is republished rather than copied.
+            val remote = InMemoryRemote()
+            val a = device()
+            val noteId = a.addNote("stale text", NoteRepository.ROOT_FOLDER_ID)
+            var now = a.pendingOutbox().single().enqueuedAt + 1_000L
+            NoteSyncEngine(a, remote).sync(pushSettleMillis = 0L, nowMillis = now)
+            val uuid =
+                a.allNotes
+                    .first()
+                    .single()
+                    .uuid
+            val fileId = a.allBaselines().single().remoteFileId!!
+
+            now += 10_000L
+            a.updateNote(noteId, "stale text plus what I typed", editedAtMillis = now)
+
+            val fromThisInstall =
+                decodeNoteFile(remote.download(fileId))
+                    .copy(updatedAt = now + 300_000L, content = "stale text", deviceId = a.deviceId)
+            remote.update(fileId, fromThisInstall.encode())
+
+            val result = NoteSyncEngine(a, remote).sync(pushSettleMillis = 0L, nowMillis = now + 1_000L)
+
+            assertEquals(0, result.conflictsResolved, "our own install's write is not a conflict")
+            assertEquals(1, a.allNotes.first().size, "and no copy is manufactured")
+            assertEquals(
+                "stale text plus what I typed",
+                a.allNotes
+                    .first()
+                    .single()
+                    .content,
+                "the live editor's text is kept",
+            )
+            assertEquals(
+                "stale text plus what I typed",
+                decodeNoteFile(remote.download(fileId)).content,
+                "and republished over the stale write",
+            )
+            assertEquals(
+                uuid,
+                a.allNotes
+                    .first()
+                    .single()
+                    .uuid,
+            )
         }
 }

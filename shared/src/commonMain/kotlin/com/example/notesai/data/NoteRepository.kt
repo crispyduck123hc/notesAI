@@ -2,6 +2,7 @@ package com.example.notesai.data
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import app.cash.sqldelight.db.SqlDriver
 import com.example.notesai.db.ConflictInbox
@@ -35,6 +36,15 @@ class NoteRepository(
 
     val allNotes: Flow<List<NoteEntity>> =
         queries.selectAllNotes().asFlow().mapToList(Dispatchers.Default)
+
+    /**
+     * How many records are owed to the remote, so a caller can be woken when the queue stops being empty.
+     *
+     * SQLDelight notifies query listeners **once per committed transaction**, so the first edit of a burst is what
+     * produces a signal: further edits leave the count where it was and emit nothing new.
+     */
+    val outboxCount: Flow<Long> =
+        queries.countOutbox().asFlow().mapToOne(Dispatchers.Default)
 
     /**
      * Unresolved conflicts, for the review UI.
@@ -199,9 +209,15 @@ class NoteRepository(
         }
     }
 
+    /**
+     * @param editedAtMillis when the *user* last typed this text, not when this write happens. Saves are debounced
+     *   and editors also flush on dispose, so those two moments can be minutes apart; `updatedAt` is what the conflict
+     *   tie-break compares, so it must mean "when the text was written by a person".
+     */
     fun updateNote(
         id: Long,
         text: String,
+        editedAtMillis: Long = now(),
     ) {
         val existing = queries.selectNoteById(id).executeAsOneOrNull() ?: return
         val title = text.noteTitle()
@@ -214,7 +230,7 @@ class NoteRepository(
         if (existing.content == text && existing.title == title) return
 
         mutate(entityType = EntityType.NOTE, uuidOf = { existing.uuid }) {
-            queries.updateNote(title = title, content = text, updatedAt = now(), id = id)
+            queries.updateNote(title = title, content = text, updatedAt = editedAtMillis, id = id)
         }
     }
 
@@ -259,7 +275,14 @@ class NoteRepository(
         entityUuid: String,
     ) {
         val timestamp = now()
-        queries.enqueueOutbox(entityType = entityType, entityUuid = entityUuid, enqueuedAt = timestamp)
+        // `firstPendingAt` is written here but never refreshed: it is the maximum-wait clock, so the first edit of a
+        // session is what bounds how long a note can stay unpublished while it keeps changing.
+        queries.enqueueOutbox(
+            entityType = entityType,
+            entityUuid = entityUuid,
+            enqueuedAt = timestamp,
+            firstPendingAt = timestamp,
+        )
         // A second edit must not erase the retry count, the last error or the recorded upload attempt; it only means
         // the change is newer than the last settle window.
         queries.refreshOutbox(enqueuedAt = timestamp, entityType = entityType, entityUuid = entityUuid)
