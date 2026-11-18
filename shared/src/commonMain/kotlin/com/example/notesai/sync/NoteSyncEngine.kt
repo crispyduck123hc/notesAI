@@ -613,10 +613,8 @@ class NoteSyncEngine(
         // when the timestamps match.
         val remoteWins =
             remoteTextWins(
-                remoteUpdatedAt = remoteFile.updatedAt,
-                localUpdatedAt = local.updatedAt,
-                remoteUuid = remoteFile.uuid,
-                localUuid = local.uuid,
+                remote = ConflictSide(remoteFile.updatedAt, remoteFile.deviceId, remoteFile.content),
+                local = ConflictSide(local.updatedAt, repository.deviceId, local.content),
             )
 
         // Whichever text does *not* become the note is preserved as a conflicted copy, so both
@@ -664,22 +662,43 @@ class NoteSyncEngine(
         return Resolution(ConflictOutcome.KEEP_BOTH, published)
     }
 
+    /** One side of a conflict, as far as deciding the winner is concerned. */
+    internal data class ConflictSide(
+        val updatedAt: Long,
+        val deviceId: String?,
+        val content: String,
+    )
+
     /**
-     * Which of the two texts becomes the note. It must be **antisymmetric**: when device A compares, the remote is B's
-     * text; when B compares, the remote is A's. Comparing in the same direction on both sides (a `>=`, say) would let
-     * both devices decide they won, and each would copy the other's text — mirrored halves that disagree forever.
+     * Which of the two texts becomes the note. Two requirements, and the second is the one that is easy to get wrong:
      *
-     * Timestamps first, because that is "who typed last". They are often equal (the files descend from the same edit,
-     * or one device's save landed twice), so the tie-break compares uuids: a value both sides know, ordered oppositely
-     * from each side's point of view. `deviceId` is the better tie-break where it exists, but it is absent from files
-     * written before the field, so uuid is the fallback that always works.
+     * 1. **Deterministic** -- the same inputs always give the same answer.
+     * 2. **Antisymmetric** -- when device A compares, the remote is B's side; when B compares, it is A's. So the
+     *    comparison must be made of values that *differ between the two sides*, and it must order them the same way
+     *    from either viewpoint. `remote > local` on such a value does exactly that.
+     *
+     * Timestamps come first, because that is "who typed last", and `>` on differing timestamps is already
+     * antisymmetric. Ties are the interesting case, and they are common: two edits in the same millisecond, or two
+     * files descending from the same revision.
+     *
+     * The original tie-break compared the record's `uuid` -- which is a mistake, because both sides of a conflict are
+     * the *same record*: the file is named after the note's uuid and its payload repeats it, so `remoteFile.uuid` and
+     * `local.uuid` are always equal, the comparison was always false, and a tie left both devices deciding "the remote
+     * loses" -- both keeping their own text and republishing it, which is the mirrored-halves behaviour the tie-break
+     * was supposed to prevent. What differs between the two sides is the device that wrote them, and failing that (a
+     * file from before the field existed) the text itself, which by definition differs in a conflict.
      */
     internal fun remoteTextWins(
-        remoteUpdatedAt: Long,
-        localUpdatedAt: Long,
-        remoteUuid: String,
-        localUuid: String,
-    ): Boolean = remoteUpdatedAt > localUpdatedAt || (remoteUpdatedAt == localUpdatedAt && remoteUuid > localUuid)
+        remote: ConflictSide,
+        local: ConflictSide,
+    ): Boolean =
+        if (remote.updatedAt != local.updatedAt) {
+            remote.updatedAt > local.updatedAt
+        } else {
+            // A total order over values that differ: device identity first (meaningful), then the text (always
+            // available, and never equal when a conflict is being decided).
+            compareValuesBy(remote, local, { it.deviceId ?: "" }, { it.content }) > 0
+        }
 
     /**
      * Whether another editor in *this* install wrote the remote file: a reloaded composition with a stale buffer, or
