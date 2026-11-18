@@ -49,6 +49,11 @@ CREATE TABLE SyncOutbox (
     -- later pass, the file is this device's own write whose response was lost — the app was closed or killed
     -- mid-request — and it must be adopted rather than treated as somebody else's edit.
     contentHash TEXT,
+    -- When the oldest edit still unsent was queued. Set once, on insert; `enqueuedAt` moves with every edit instead.
+    -- A record being typed into continuously is never "quiet", so without this it would never be published; this is
+    -- the maximum wait that bounds it. Rows written before the column existed default to 0, which reads as "already
+    -- waited long enough" and publishes them at the next pass.
+    firstPendingAt INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (entityType, entityUuid)
 );
 
@@ -196,14 +201,17 @@ DELETE FROM AppMetadata WHERE key = ?;
 -- Inserted once; a later edit only moves the timestamp (see refreshOutbox). REPLACE here would erase the retry
 -- count, the last error and the recorded upload attempt every time the note is touched.
 enqueueOutbox:
-INSERT OR IGNORE INTO SyncOutbox(entityType, entityUuid, enqueuedAt, attempts, lastError)
-VALUES (?, ?, ?, 0, NULL);
+INSERT OR IGNORE INTO SyncOutbox(entityType, entityUuid, enqueuedAt, attempts, lastError, firstPendingAt)
+VALUES (?, ?, ?, 0, NULL, ?);
 
 refreshOutbox:
 UPDATE SyncOutbox SET enqueuedAt = ? WHERE entityType = ? AND entityUuid = ?;
 
 selectOutbox:
 SELECT * FROM SyncOutbox ORDER BY enqueuedAt;
+
+countOutbox:
+SELECT COUNT(*) FROM SyncOutbox;
 
 deleteOutbox:
 DELETE FROM SyncOutbox WHERE entityType = ? AND entityUuid = ?;

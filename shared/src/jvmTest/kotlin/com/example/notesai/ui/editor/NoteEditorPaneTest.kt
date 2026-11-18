@@ -42,7 +42,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "first line", content = "first line\nbody"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -53,7 +53,7 @@ class NoteEditorPaneTest {
     fun noDocumentShowsThePlaceholder() =
         runComposeUiTest {
             setContent {
-                NoteEditorPane(pendingEdit = PendingEdit(), document = null, onChange = {})
+                NoteEditorPane(pendingEdit = PendingEdit(), document = null, onChange = { _, _ -> })
             }
 
             onNodeWithText("Select or create a note").assertExists()
@@ -67,7 +67,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "", content = ""),
-                    onChange = { writes += it },
+                    onChange = { text, _ -> writes += text },
                 )
             }
 
@@ -105,7 +105,7 @@ class NoteEditorPaneTest {
                     document = document,
                     // Closes over `document` from the composition that created it, which is exactly
                     // how NotesScreen wires the real editor.
-                    onChange = { text -> writes += document.ref to text },
+                    onChange = { text, _ -> writes += document.ref to text },
                 )
             }
 
@@ -132,7 +132,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -150,7 +150,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -168,7 +168,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -186,7 +186,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "\u2022 milk\n\u2022 "),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -203,7 +203,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -222,7 +222,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -242,7 +242,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -262,7 +262,7 @@ class NoteEditorPaneTest {
                     pendingEdit = PendingEdit(),
                     // An empty bullet: the caret sits right after the marker's space.
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + BULLET_MARKER),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -281,7 +281,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = INDENT_UNIT + INDENT_UNIT + BULLET_MARKER + "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -303,7 +303,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -324,7 +324,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -342,7 +342,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "shopping"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -359,7 +359,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -377,7 +377,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = DASH_MARKER + "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -394,7 +394,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "step"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -411,7 +411,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = ""),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -430,7 +430,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = NUMBERED_MARKER + "step"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -447,7 +447,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -465,7 +465,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -483,7 +483,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_DONE + "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -500,7 +500,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = PendingEdit(),
                     document = NoteDocument(ref = NoteRef.Local(1), title = "t", content = CHECKLIST_OPEN + "milk"),
-                    onChange = {},
+                    onChange = { _, _ -> },
                 )
             }
 
@@ -526,7 +526,7 @@ class NoteEditorPaneTest {
                 NoteEditorPane(
                     pendingEdit = pendingEdit,
                     document = NoteDocument(ref = NoteRef.Local(1), title = "first", content = "first\nbody"),
-                    onChange = { writes += it },
+                    onChange = { text, _ -> writes += text },
                 )
             }
 
@@ -547,7 +547,7 @@ class NoteEditorPaneTest {
                     NoteEditorPane(
                         pendingEdit = pendingEdit,
                         document = NoteDocument(ref = NoteRef.Local(1), title = "first", content = "first"),
-                        onChange = { writes += it },
+                        onChange = { text, _ -> writes += text },
                     )
                 }
             }
@@ -560,5 +560,37 @@ class NoteEditorPaneTest {
             pendingEdit.commit()
 
             assertEquals(afterDispose, writes.size, "a disposed editor must not write again: $writes")
+        }
+
+    @Test
+    fun theFlushReportsWhenTheUserTypedNotWhenTheFlushRan() =
+        runComposeUiTest {
+            // `updatedAt` is what the conflict tie-break compares, so it has to be the keystroke's time. A dispose
+            // flush can happen long after the last keystroke -- that is precisely how a stale buffer came to outrank
+            // newer text and manufacture copies.
+            val stamps = mutableListOf<Long>()
+            var showing by mutableStateOf(true)
+
+            setContent {
+                if (showing) {
+                    NoteEditorPane(
+                        pendingEdit = PendingEdit(),
+                        document = NoteDocument(ref = NoteRef.Local(1), title = "first", content = "first"),
+                        onChange = { _, at -> stamps += at },
+                    )
+                }
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput(" typed")
+            waitUntil(timeoutMillis = 2_000) { stamps.isNotEmpty() }
+            val typedAt = stamps.last()
+
+            // A long pause before the editor goes away: seconds of virtual-ish lag, well beyond the debounce.
+            Thread.sleep(150)
+            showing = false
+            waitForIdle()
+
+            assertEquals(typedAt, stamps.last(), "the flush must carry the typing time, not the flush time")
         }
 }

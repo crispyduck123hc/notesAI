@@ -40,6 +40,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlin.time.Clock
 
 private const val WRITE_DEBOUNCE_MS = 300L
 
@@ -55,7 +56,8 @@ private const val WRITE_DEBOUNCE_MS = 300L
 internal fun NoteEditorPane(
     document: NoteDocument?,
     pendingEdit: PendingEdit,
-    onChange: (String) -> Unit,
+    /** Receives the buffer and when the user last typed it, which becomes the note's `updatedAt`. */
+    onChange: (text: String, lastTypedAtMillis: Long) -> Unit,
     /** Null for local notes, which have no state to toggle. */
     onToggleComplete: (() -> Unit)? = null,
     /** Null for local notes; issues can be handed to the browser. */
@@ -77,12 +79,22 @@ internal fun NoteEditorPane(
     // so the async Flow re-emission from our own write can't clobber what's typed.
     val textState = remember(document.ref) { mutableStateOf(TextFieldValue(document.content)) }
 
+    // When the buffer last changed *because the user changed it*. A save can happen much later than the keystroke --
+    // the debounce waits for a pause, and disposing the editor flushes whatever is left -- and `updatedAt` has to
+    // record the keystroke, not the save, because that is what the conflict tie-break compares.
+    val lastTypedAt = remember(document.ref) { mutableStateOf(nowMillis()) }
+
+    fun edit(newValue: TextFieldValue) {
+        textState.value = newValue
+        lastTypedAt.value = nowMillis()
+    }
+
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
     LaunchedEffect(document.ref) {
         snapshotFlow { textState.value.text }
             .drop(1) // ignore the value already persisted
             .debounce(WRITE_DEBOUNCE_MS)
-            .collectLatest { onChange(it) }
+            .collectLatest { onChange(it, lastTypedAt.value) }
     }
 
     // Flush the pending text when switching notes or leaving the screen. `textState`
@@ -93,10 +105,10 @@ internal fun NoteEditorPane(
     // composition to be disposed either: quitting runs it synchronously, which is one local transaction and no
     // network call.
     DisposableEffect(document.ref) {
-        pendingEdit.offer { onChange(textState.value.text) }
+        pendingEdit.offer { onChange(textState.value.text, lastTypedAt.value) }
         onDispose {
             pendingEdit.withdraw()
-            onChange(textState.value.text)
+            onChange(textState.value.text, lastTypedAt.value)
         }
     }
 
@@ -144,29 +156,29 @@ internal fun NoteEditorPane(
             verticalArrangement = Arrangement.Center,
         ) {
             TextButton(
-                onClick = { textState.value = toggleList(textState.value, ListKind.BULLET) },
+                onClick = { edit(toggleList(textState.value, ListKind.BULLET)) },
             ) {
                 Text("\u2022 Bullet list")
             }
             TextButton(
-                onClick = { textState.value = toggleList(textState.value, ListKind.DASH) },
+                onClick = { edit(toggleList(textState.value, ListKind.DASH)) },
             ) {
                 Text("${DASH_MARKER.trimEnd()} Dash list")
             }
             TextButton(
-                onClick = { textState.value = toggleList(textState.value, ListKind.NUMBERED) },
+                onClick = { edit(toggleList(textState.value, ListKind.NUMBERED)) },
             ) {
                 Text("${NUMBERED_MARKER.trimEnd()} Numbered list")
             }
             TextButton(
-                onClick = { textState.value = toggleList(textState.value, ListKind.CHECKLIST) },
+                onClick = { edit(toggleList(textState.value, ListKind.CHECKLIST)) },
             ) {
                 Text("\u25CB Checklist")
             }
             TextButton(
                 // Apple ticks by tapping the circle; a plain text field cannot tell which character was tapped, so
                 // the tick is an action on the caret's line — here and on Ctrl+Enter below.
-                onClick = { textState.value = toggleChecklistState(textState.value) },
+                onClick = { edit(toggleChecklistState(textState.value)) },
             ) {
                 Text("\u2713 Tick item")
             }
@@ -177,7 +189,7 @@ internal fun NoteEditorPane(
             // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
             // and deleting the space after a bullet ends it too. Done as part of the value change rather
             // than as key events, so a soft keyboard on Android behaves the same as a hardware Return.
-            onValueChange = { textState.value = applyEditorTyping(textState.value, it) },
+            onValueChange = { edit(applyEditorTyping(textState.value, it)) },
             // The first line is a title only for local notes; an issue's body is just a body. Tabs are
             // drawn at a real width in both cases.
             visualTransformation = EditorTransformation(titleStyle = if (completion == null) TitleStyle else null),
@@ -196,17 +208,18 @@ internal fun NoteEditorPane(
                     .onPreviewKeyEvent { event ->
                         val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
                         if (indentKey) {
-                            textState.value =
+                            edit(
                                 if (event.isShiftPressed) {
                                     outdentAtCaret(textState.value)
                                 } else {
                                     indentAtCaret(textState.value)
-                                }
+                                },
+                            )
                             return@onPreviewKeyEvent true
                         }
                         // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
                         if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
-                            textState.value = toggleChecklistState(textState.value)
+                            edit(toggleChecklistState(textState.value))
                             return@onPreviewKeyEvent true
                         }
                         false
@@ -214,3 +227,6 @@ internal fun NoteEditorPane(
         )
     }
 }
+
+/** Wall clock, kept file-local so the composable reads like the rest of the code. */
+private fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
