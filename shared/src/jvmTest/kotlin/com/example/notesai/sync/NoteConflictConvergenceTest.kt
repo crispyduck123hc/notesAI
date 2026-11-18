@@ -274,4 +274,46 @@ class NoteConflictConvergenceTest {
                     .uuid,
             )
         }
+
+    @Test
+    fun aTimestampTieStillLeavesBothDevicesHoldingTheSameText() =
+        runBlocking {
+            // The same-millisecond case with *controlled* device ids, so the expected winner is known: the greater id
+            // wins the tie. Before the tie-break was fixed it compared the note's own uuid, which is identical on both
+            // sides, so both devices decided "the remote loses" and both republished -- mirrored halves.
+            val remote = InMemoryRemote()
+            val a = deviceWithId("device-a")
+            val b = deviceWithId("device-b")
+            a.addNote("original")
+            NoteSyncEngine(a, remote).sync()
+            NoteSyncEngine(b, remote).sync()
+
+            val same = 1_800_000_000_000L
+            b.allNotes
+                .first()
+                .single()
+                .let { b.updateNote(it.id, "from B", editedAtMillis = same) }
+            a.allNotes
+                .first()
+                .single()
+                .let { a.updateNote(it.id, "from A", editedAtMillis = same) }
+
+            repeat(2) {
+                NoteSyncEngine(a, remote).sync()
+                NoteSyncEngine(b, remote).sync()
+            }
+
+            assertEquals("from B", a.primary().content, "the greater device id wins the tie")
+            assertEquals(b.primary().content, a.primary().content)
+            assertEquals(b.copies().map { it.content }, a.copies().map { it.content })
+        }
+
+    /** A device whose identity is known in advance, so a tie-break outcome can be asserted. */
+    private fun deviceWithId(id: String): NoteRepository {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        NotesDatabase.Schema.create(driver)
+        // Seeded before the repository is constructed: `deviceId` is read once, at construction.
+        NotesDatabase(driver).notesDatabaseQueries.upsertMetadata(NoteRepository.DEVICE_ID_KEY, id)
+        return NoteRepository(driver)
+    }
 }
