@@ -1,6 +1,5 @@
 package com.example.notesai.ui.editor
 
-import androidx.compose.ui.text.AnnotatedString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,51 +75,42 @@ class EditorDecorationTest {
     }
 
     @Test
-    fun theRendererDrawsExactlyTheDecorationsTheModelDescribes() {
-        // The parity contract: same count, same glyph, same place. This is the test that would have caught the two
-        // descriptions drifting apart while the overlay work happens.
+    fun theDrawingIsExactlyTheDecorationsPlusExpandedTabs() {
+        // The projection the output transformation writes into the field, asserted as text: one circle per decoration,
+        // and every other character untouched apart from a tab becoming TAB_COLUMNS spaces.
         for (note in corpus) {
-            val drawn = EditorTransformation().filter(AnnotatedString(note))
-            val decorations = editorDecorations(note)
+            val drawn = applyDisplayEdits(note)
 
             assertEquals(
-                decorations.size,
-                drawn.text.text.count { it == '\u25CB' || it == '\u25C9' },
+                editorDecorations(note).size,
+                drawn.count { it == '\u25CB' || it == '\u25C9' },
                 "one drawn circle per decoration in ${escape(note)}",
             )
-            for (decoration in decorations) {
-                val at = drawn.offsetMapping.originalToTransformed(decoration.start)
-                assertEquals(
-                    decoration.drawnGlyph,
-                    drawn.text.text.substring(at, at + decoration.drawnGlyph.length),
-                    "decoration at ${decoration.start} of ${escape(note)}",
-                )
-            }
+            assertEquals(
+                note.length - editorDecorations(note).sumOf { it.end - it.start } +
+                    editorDecorations(note).size * 2 +
+                    note.count { it == '\t' } * (TAB_COLUMNS - 1),
+                drawn.length,
+                "markers become two columns, tabs become $TAB_COLUMNS in ${escape(note)}",
+            )
+            assertEquals(expectedDrawing(note), drawn, "drawn text for ${escape(note)}")
         }
     }
 
     @Test
-    fun everythingOutsideADecorationIsDrawnUnchangedApartFromTabs() {
-        for (note in corpus) {
-            val drawn = EditorTransformation().filter(AnnotatedString(note)).text.text
-            val expected =
-                buildString {
-                    var index = 0
-                    val decorations = editorDecorations(note)
-                    while (index < note.length) {
-                        val decoration = decorations.firstOrNull { it.start == index }
-                        if (decoration != null) {
-                            append(decoration.drawnGlyph)
-                            index = decoration.end
-                        } else {
-                            append(if (note[index] == '\t') " ".repeat(TAB_COLUMNS) else note[index])
-                            index++
-                        }
-                    }
-                }
+    fun aSpanPlacedOnTheFirstLineMapsToWhereItIsDrawn() {
+        // The title style covers the first line, and its end has to be expressed in drawn coordinates.
+        assertEquals(0, drawnOffset("[ ] milk", 0))
+        assertEquals(2, drawnOffset("[ ] milk", CHECKLIST_OPEN.length))
+        // The bracket is drawn after the four columns the tab occupies, not after one.
+        assertEquals(TAB_COLUMNS, drawnOffset("\t[ ] a", 1))
+        assertEquals("first line", applyDisplayEdits("first line\nsecond").substring(0, drawnOffset("first line\nsecond", 10)))
+    }
 
-            assertEquals(expected, drawn, "drawn text for ${escape(note)}")
-        }
+    @Test
+    fun proseThatLooksLikeAMarkerIsDrawnAsWritten() {
+        assertEquals("write [ ] down", applyDisplayEdits("write [ ] down"))
+        assertEquals("a\tb", "a\tb".let { applyDisplayEdits(it) }.replace(" ".repeat(TAB_COLUMNS), "\t"))
     }
 
     private data class Decoration(
@@ -128,6 +118,23 @@ class EditorDecorationTest {
         val end: Int,
         val checked: Boolean = false,
     )
+
+    /** An independent reconstruction of what should be drawn, so the projection is not compared with itself. */
+    private fun expectedDrawing(note: String): String =
+        buildString {
+            var index = 0
+            val decorations = editorDecorations(note)
+            while (index < note.length) {
+                val decoration = decorations.firstOrNull { it.start == index }
+                if (decoration != null) {
+                    append(decoration.drawnGlyph)
+                    index = decoration.end
+                } else {
+                    append(if (note[index] == '\t') " ".repeat(TAB_COLUMNS) else note[index])
+                    index++
+                }
+            }
+        }
 
     private fun described(note: String): List<Decoration> = editorDecorations(note).map { Decoration(it.start, it.end, it.checked) }
 

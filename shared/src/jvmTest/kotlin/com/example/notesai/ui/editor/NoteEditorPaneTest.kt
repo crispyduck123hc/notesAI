@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
@@ -593,4 +595,29 @@ class NoteEditorPaneTest {
 
             assertEquals(typedAt, stamps.last(), "the flush must carry the typing time, not the flush time")
         }
+
+    @Test
+    fun theFieldReportsTheLayoutTheOverlayWillUse() =
+        runComposeUiTest {
+            // Phase 1's deliverable: `onTextLayout` reaches the app, so phase 2 can position an overlay from the
+            // field's own layout instead of measuring text a second time. Asserted through the field's semantics.
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "a", content = "a\nb"),
+                    onChange = { _, _ -> },
+                )
+            }
+
+            onNode(hasSetTextAction()).performClick()
+            onNode(hasSetTextAction()).performTextInput("\nc")
+
+            waitUntil(timeoutMillis = 5_000) { layoutLines() == 3 }
+            assertEquals(3, layoutLines(), "three note lines, three laid-out lines: no phantom lines")
+            assertEquals(2, caretLine(), "the caret sits on the line its offset belongs to")
+        }
+
+    private fun ComposeUiTest.layoutLines(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorLineCountKey)
+
+    private fun ComposeUiTest.caretLine(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorCaretLineKey)
 }
