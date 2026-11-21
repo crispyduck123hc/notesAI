@@ -33,7 +33,10 @@ internal fun displayEdits(text: String): List<DisplayEdit> =
             if (character == '\t') add(DisplayEdit(index, index + 1, " ".repeat(TAB_COLUMNS)))
         }
         editorDecorations(text).forEach { decoration ->
-            add(DisplayEdit(decoration.start, decoration.end, decoration.drawnGlyph))
+            // Only decorations that *replace* their characters produce an edit. A link is drawn as written; it only
+            // gains something clickable, which the overlay adds.
+            val glyph = decoration.drawnGlyph ?: return@forEach
+            add(DisplayEdit(decoration.start, decoration.end, glyph))
         }
     }.sortedBy { it.start }
 

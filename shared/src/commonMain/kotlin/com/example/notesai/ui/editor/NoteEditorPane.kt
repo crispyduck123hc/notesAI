@@ -70,6 +70,8 @@ internal fun NoteEditorPane(
     onToggleComplete: (() -> Unit)? = null,
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
+    /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     val completion = document?.completion
 
@@ -242,7 +244,12 @@ internal fun NoteEditorPane(
                 // The layout the overlay positions itself from.
                 onTextLayout = { getResult -> layout.value = getResult() },
                 lineLimits = TextFieldLineLimits.MultiLine(),
-                textStyle = MaterialTheme.typography.bodyLarge,
+                // `BasicTextField` paints with the style it is given, and `bodyLarge` carries no colour. Material's
+                // outlined field used to substitute `TextFieldColors.textColor`; without that the text fell back to
+                // the platform default (black), so the note was unreadable in dark mode. The caret had the same
+                // problem -- its default brush is solid black -- and is invisible against a dark background.
+                textStyle = editorTextStyle(MaterialTheme.typography.bodyLarge, MaterialTheme.colorScheme),
+                cursorBrush = editorCursorBrush(MaterialTheme.colorScheme),
                 scrollState = scrollState,
                 modifier =
                     Modifier
@@ -278,6 +285,10 @@ internal fun NoteEditorPane(
                 text = state.text.toString(),
                 layout = layout.value,
                 scrollOffsetPx = scrollState.value.toFloat(),
+                // A tap on a circle edits the note's text: the same operation the toolbar button and Ctrl+Enter perform,
+                // addressed by position instead of by the caret's line. The text stays the document.
+                onDecorationClick = { decoration -> edit(toggleChecklistAt(currentValue(), decoration.start)) },
+                onLinkClick = onOpenLink,
             )
         }
     }

@@ -39,7 +39,9 @@ internal fun placeDecorations(
     val drawnLength = layout.layoutInput.text.length
     return decorations.mapNotNull { decoration ->
         val drawnStart = drawnOffset(text, decoration.start).coerceIn(0, drawnLength)
-        val drawnEnd = (drawnStart + decoration.drawnGlyph.length).coerceIn(drawnStart, drawnLength)
+        // The end offset, not a glyph length: a checklist marker shrinks from four characters to two, a link does not
+        // change at all, and this happens to be right for both.
+        val drawnEnd = drawnOffset(text, decoration.end).coerceIn(drawnStart, drawnLength)
         if (drawnStart >= drawnLength) return@mapNotNull null
 
         val line = layout.getLineForOffset(drawnStart)

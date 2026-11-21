@@ -207,6 +207,9 @@ internal fun NotesScreen(
                     null -> Unit
                 }
             },
+            // Local notes may follow their links; a GitHub issue body may not, because the browser would leave the
+            // app for a page this note does not own.
+            onOpenLink = if (state.selectedRef is NoteRef.Local) ::openInBrowser else null,
             onOpenOnGitHub =
                 (state.selectedRef as? NoteRef.GitHubIssue)?.let { ref ->
                     gitHubRepos.firstOrNull { it.id == ref.repoId }?.let { repo ->

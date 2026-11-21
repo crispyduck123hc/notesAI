@@ -19,6 +19,20 @@ class NoteSyncEngineTest {
         return NoteRepository(driver)
     }
 
+    /**
+     * A device whose identity is known in advance.
+     *
+     * Two edits made by a test usually land in the same millisecond, so the conflict tie-break is what decides who
+     * wins -- and it decides by device id. Seeding the ids makes the expected winner a property of the test instead of
+     * a coin flip.
+     */
+    private fun deviceWithId(id: String): NoteRepository {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        NotesDatabase.Schema.create(driver)
+        NotesDatabase(driver).notesDatabaseQueries.upsertMetadata(NoteRepository.DEVICE_ID_KEY, id)
+        return NoteRepository(driver)
+    }
+
     private suspend fun NoteRepository.sync(remote: SyncRemote) = NoteSyncEngine(this, remote).sync()
 
     @Test
@@ -102,11 +116,13 @@ class NoteSyncEngineTest {
     fun concurrentEditsOnTheSameNoteKeepBoth() =
         runBlocking {
             val remote = InMemoryRemote()
-            val a = device()
+            // "device-a" sorts before "device-b", so on a timestamp tie the later device keeps its own text: that is
+            // what the assertions below expect, and it is stated here instead of depending on random ids.
+            val a = deviceWithId("device-a")
             val noteIdA = a.addNote("original\nbody")
             a.sync(remote)
 
-            val b = device()
+            val b = deviceWithId("device-b")
             b.sync(remote)
             val noteIdB =
                 b.allNotes
