@@ -12,11 +12,6 @@ import androidx.compose.ui.unit.sp
 /** How many columns wide a tab is drawn. */
 const val TAB_COLUMNS = 4
 
-/** What a checklist item is drawn as: a radio-like circle, filled once it is ticked. */
-private const val UNCHECKED_GLYPH = "\u25CB "
-
-private const val CHECKED_GLYPH = "\u25C9 "
-
 /**
  * What the editor draws: tabs at a real width, and optionally the first line as a title.
  *
@@ -32,6 +27,9 @@ internal class EditorTransformation(
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val original = text.text
+        // The drawn shapes come from the same description the overlay will read, so the renderer and the model cannot
+        // disagree about where a circle goes.
+        val decorationsByStart = editorDecorations(original).associateBy { it.start }
         val expanded = StringBuilder(original.length + TAB_COLUMNS)
         val originalToTransformed = IntArray(original.length + 1)
         var column = 0
@@ -44,17 +42,16 @@ internal class EditorTransformation(
             // A checklist marker is drawn as a circle rather than as "[ ]": the note keeps the Markdown-ish
             // characters (they sync, they grep, they survive being edited anywhere) and the editor shows the shape
             // they stand for. Only at the start of a line, so prose that mentions "[ ]" is left alone.
-            val marker = if (index == firstNonSpaceOf(original, lineStart)) parseMarker(original, index) else null
-            if (marker != null && marker.kind == ListKind.CHECKLIST) {
-                val glyph = if (marker.checked) CHECKED_GLYPH else UNCHECKED_GLYPH
+            val decoration = decorationsByStart[index]
+            if (decoration != null) {
                 if (original[index] == '\n') lineStart = index + 1
-                expanded.append(glyph)
-                // Every character of the marker maps onto the same two drawn columns.
-                repeat(marker.text.length) {
-                    originalToTransformed[(index + it).coerceAtMost(original.length)] = column
+                expanded.append(decoration.drawnGlyph)
+                // Every character of the marker maps onto the same drawn columns.
+                for (offset in decoration.range) {
+                    originalToTransformed[offset.coerceAtMost(original.length)] = column
                 }
-                column += glyph.length
-                index += marker.text.length
+                column += decoration.drawnGlyph.length
+                index = decoration.end
                 continue
             }
 
@@ -110,13 +107,3 @@ private class TabOffsetMapping(
 
 /** The style the first line of a local note is drawn in — bigger and heavier, like a heading. */
 internal val TitleStyle: SpanStyle = SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold)
-
-/** Where the first non-whitespace character of the line starting at [lineStart] is. */
-private fun firstNonSpaceOf(
-    text: String,
-    lineStart: Int,
-): Int {
-    var index = lineStart
-    while (index < text.length && (text[index] == ' ' || text[index] == '\t')) index++
-    return index
-}
