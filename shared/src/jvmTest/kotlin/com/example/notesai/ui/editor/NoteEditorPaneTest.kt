@@ -9,6 +9,8 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
@@ -620,4 +622,31 @@ class NoteEditorPaneTest {
     private fun ComposeUiTest.layoutLines(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorLineCountKey)
 
     private fun ComposeUiTest.caretLine(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorCaretLineKey)
+
+    @Test
+    fun tappingACircleInTheRealPaneEditsTheNote() =
+        runComposeUiTest {
+            // The whole path: the pane's field, its drawing, the overlay's hit target, the edit, the debounced save.
+            // `waitUntil` polls with a timeout; `waitForIdle` would hang because a focused field never stops scheduling
+            // cursor-blink frames.
+            val saved = mutableListOf<String>()
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "[ ] milk", content = "[ ] milk\n[ ] eggs"),
+                    onChange = { text, _ -> saved += text },
+                )
+            }
+            waitUntil(timeoutMillis = 5_000) {
+                onAllNodesWithTag(DECORATION_TAG_PREFIX + 1).fetchSemanticsNodes().isNotEmpty()
+            }
+            onNodeWithTag(DECORATION_TAG_PREFIX + 1).performClick()
+            waitUntil(timeoutMillis = 5_000) { saved.isNotEmpty() }
+
+            assertEquals(
+                "[ ] milk\n[x] eggs",
+                saved.lastOrNull(),
+                "the tapped item is ticked and the note is saved: $saved",
+            )
+        }
 }

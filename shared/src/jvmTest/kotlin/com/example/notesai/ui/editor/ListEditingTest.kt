@@ -647,4 +647,47 @@ class ListEditingTest {
         val fromBullet = toggleList(kind = ListKind.CHECKLIST, value = value(BULLET_MARKER + "milk", caret = 7))
         assertEquals(CHECKLIST_OPEN + "milk", fromBullet.text)
     }
+
+    @Test
+    fun tappingACircleTogglesThatItemAndNotTheCaretsLine() {
+        // The overlay knows `start`, so it does not need the caret at all: the caret can be anywhere, including in
+        // another note line, and the tapped marker is the one that flips.
+        val note = "[ ] milk\n[ ] eggs"
+        val caretInFirstLine = TextFieldValue(note, TextRange(3))
+        val secondMarker = note.indexOf("[ ] eggs")
+
+        val toggled = toggleChecklistAt(caretInFirstLine, secondMarker)
+
+        assertEquals("[ ] milk\n[x] eggs", toggled.text, "the tapped item is the one that changes")
+        assertEquals(3, toggled.selection.start, "and the caret stays where the user left it")
+    }
+
+    @Test
+    fun tappingAnAlreadyTickedItemUnticksIt() {
+        val note = "[x] milk"
+        val toggled = toggleChecklistAt(TextFieldValue(note, TextRange(0)), 0)
+
+        assertEquals("[ ] milk", toggled.text)
+    }
+
+    @Test
+    fun tappingSomethingThatIsNotAChecklistMarkerChangesNothing() {
+        val prose = TextFieldValue("write [ ] down", TextRange(0))
+        assertEquals(prose, toggleChecklistAt(prose, 6), "a bracket pair mid-line is not a marker")
+
+        val bullet = TextFieldValue("\u2022 milk", TextRange(0))
+        assertEquals(bullet, toggleChecklistAt(bullet, 0), "a bullet has no tick")
+
+        val empty = TextFieldValue("[ ] ", TextRange(0))
+        assertEquals(empty, toggleChecklistAt(empty, 0), "a tick on nothing means nothing")
+    }
+
+    @Test
+    fun theKeyboardPathStillTogglesTheCaretsLine() {
+        // `toggleChecklistState` is now a lookup of the line's marker plus this operation, so the two cannot diverge.
+        val note = "[ ] milk\n[ ] eggs"
+        val caretInSecondLine = TextFieldValue(note, TextRange(note.length))
+
+        assertEquals("[ ] milk\n[x] eggs", toggleChecklistState(caretInSecondLine).text)
+    }
 }

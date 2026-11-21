@@ -139,4 +139,51 @@ class EditorDecorationTest {
     private fun described(note: String): List<Decoration> = editorDecorations(note).map { Decoration(it.start, it.end, it.checked) }
 
     private fun escape(text: String): String = text.replace("\n", "\\n").replace("\t", "\\t")
+
+    @Test
+    fun aUrlIsFoundAndTrimmedWhereTheSentenceEnds() {
+        val cases =
+            listOf(
+                "see https://example.com for more" to listOf("https://example.com"),
+                "see https://example.com. and stop" to listOf("https://example.com"),
+                "read http://a.b/c?d=e#f, then" to listOf("http://a.b/c?d=e#f"),
+                "brackets (https://example.com) here" to listOf("https://example.com"),
+                "the article https://en.wikipedia.org/wiki/Foo_(bar) is good" to
+                    listOf("https://en.wikipedia.org/wiki/Foo_(bar)"),
+                "two: https://a.io and https://b.io" to listOf("https://a.io", "https://b.io"),
+                "HTTPS://EXAMPLE.COM/caps" to listOf("HTTPS://EXAMPLE.COM/caps"),
+                "no links here" to emptyList(),
+                "ftp://files.example.com is not a link" to emptyList(),
+            )
+
+        for ((note, expected) in cases) {
+            val urls = linkSpans(note).map { note.substring(it.first, it.last + 1) }
+            assertEquals(expected, urls, "links in ${escape(note)}")
+        }
+    }
+
+    @Test
+    fun aLinkIsNotDrawnDifferentlyItIsOnlyClickable() {
+        // The characters of a URL stay exactly as written; a checklist marker is replaced, a link is not.
+        val note = "[ ] read https://example.com\n[ ] and https://a.io."
+        val drawn = applyDisplayEdits(note)
+
+        assertEquals(note.length - 4 - 4 + 4, drawn.length, "only the two markers shrank")
+        assertTrue(drawn.contains("https://example.com"), "the URL is drawn as written: $drawn")
+        assertTrue(drawn.contains("https://a.io"), "and so is the second: $drawn")
+
+        val links = editorDecorations(note).filter { it.kind == EditorDecoration.Kind.LINK }
+        assertEquals(listOf("https://example.com", "https://a.io"), links.map { it.url })
+        assertEquals(null, links.first().drawnGlyph, "a link has no glyph of its own")
+    }
+
+    @Test
+    fun decorationsAreInDocumentOrderWhateverTheirKind() {
+        val note = "https://a.io\n[ ] item"
+        val decorations = editorDecorations(note)
+
+        assertEquals(listOf(0, note.indexOf("[ ]")), decorations.map { it.start })
+        assertEquals(EditorDecoration.Kind.LINK, decorations.first().kind)
+        assertEquals(EditorDecoration.Kind.CHECKLIST, decorations.last().kind)
+    }
 }

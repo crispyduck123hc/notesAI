@@ -103,20 +103,38 @@ fun promoteListShortcut(
  * Ticks or unticks the checklist item on the caret's line.
  *
  * Apple's Notes has you tap the circle, and every Markdown editor with task lists has a command for it (Markdown
- * All in One binds `Alt+C`). A plain text field cannot tell which character was clicked without re-implementing its
- * hit testing, so the action lives on the caret's line instead — the toolbar button and Ctrl+Enter both call this.
+ * All in One binds `Alt+C`). Tapping the circle itself needs no hit testing now that the editor has an overlay, and that
+ * goes through [toggleChecklistAt]; this is the keyboard and toolbar path.
  *
  * Refuses an item with no text: a tick on nothing is a tick that means nothing, and it is also how an accidental
  * keypress would silently turn a blank line into a completed task.
  *
  * Returns the value unchanged when the line is not a checklist item or the item is empty.
  */
-@Suppress("ReturnCount") // three early exits, each one a distinct reason to do nothing
 fun toggleChecklistState(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val caret = value.selection.start.coerceIn(0, text.length)
-    val lineStart = lineStartOf(text, caret)
-    val markerStart = firstNonSpaceOf(text, lineStart)
+    val markerStart = firstNonSpaceOf(text, lineStartOf(text, caret))
+    return toggleChecklistAt(value, markerStart)
+}
+
+/**
+ * Ticks or unticks the checklist item whose marker starts at [markerStart], leaving the caret where it is.
+ *
+ * The overlay knows exactly which marker was clicked ([EditorDecoration.start]), so it does not need the "caret's line"
+ * rule at all: this is the same operation addressed by position. Returns [value] unchanged when there is no marker
+ * there, when it is not a checklist item, or when the item is empty.
+ */
+@Suppress("ReturnCount") // three early exits, each one a distinct reason to do nothing
+fun toggleChecklistAt(
+    value: TextFieldValue,
+    markerStart: Int,
+): TextFieldValue {
+    val text = value.text
+    // Only a marker that starts a line is a marker: prose may contain "[ ]" in the middle and must be left alone. The
+    // overlay only ever reports real decorations, but this function is public to the editor and has to be safe on its
+    // own -- the keyboard path relies on exactly the same rule.
+    if (markerStart != firstNonSpaceOf(text, lineStartOf(text, markerStart))) return value
     val marker = parseMarker(text, markerStart) ?: return value
     if (marker.kind != ListKind.CHECKLIST) return value
 
@@ -127,9 +145,12 @@ fun toggleChecklistState(value: TextFieldValue): TextFieldValue {
 
     val replacement = if (marker.checked) CHECKLIST_OPEN else CHECKLIST_DONE
     val shift = replacement.length - marker.text.length
+    val caret = value.selection.start.coerceIn(0, text.length)
+    // The caret stays where it was, unless the marker itself was edited and the caret sat after it.
+    val movedCaret = if (caret > markerStart) caret + shift else caret
     return value.copy(
         text = text.substring(0, markerStart) + replacement + text.substring(markerEnd),
-        selection = TextRange((caret + shift).coerceAtLeast(markerStart + replacement.length)),
+        selection = TextRange(movedCaret.coerceIn(0, text.length + shift)),
         composition = null,
     )
 }
