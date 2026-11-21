@@ -10,11 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -209,52 +210,76 @@ internal fun NoteEditorPane(
             }
         }
 
-        OutlinedTextField(
-            state = state,
-            // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
-            // and deleting the space after a bullet ends it too. Done in the input pipeline rather than as
-            // key events, so a soft keyboard on Android behaves the same as a hardware Return.
-            inputTransformation = inputTransformation,
-            // The first line is a title only for local notes; an issue's body is just a body. Tabs are
-            // drawn at a real width in both cases.
-            outputTransformation = outputTransformation,
-            // The layout the overlay will position itself from in phase 2. Captured now so the hook is proven on
-            // every platform before anything depends on it.
-            onTextLayout = { getResult -> layout.value = getResult() },
-            lineLimits = TextFieldLineLimits.MultiLine(),
-            textStyle = MaterialTheme.typography.bodyLarge,
-            placeholder = {
-                Text(if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026")
-            },
+        // A `BasicTextField` rather than a Material outlined field, so the text is drawn at this Box's own origin.
+        // That is what lets the overlay be its sibling in the same coordinate space: no padding has to be guessed,
+        // which is the difference between a tap target that is on the circle and one that is near it.
+        val scrollState = rememberScrollState()
+
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(Dimens.EditorPadding)
-                    .editorLayoutSemantics(layout, state)
-                    // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
-                    // otherwise let the key travel to the focus manager, which is why an indent was
-                    // impossible to type.
-                    .onPreviewKeyEvent { event ->
-                        val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
-                        if (indentKey) {
-                            edit(
-                                if (event.isShiftPressed) {
-                                    outdentAtCaret(currentValue())
-                                } else {
-                                    indentAtCaret(currentValue())
-                                },
-                            )
-                            return@onPreviewKeyEvent true
-                        }
-                        // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
-                            edit(toggleChecklistState(currentValue()))
-                            return@onPreviewKeyEvent true
-                        }
-                        false
-                    },
-        )
+                    .padding(Dimens.EditorPadding),
+        ) {
+            if (state.text.isEmpty()) {
+                Text(
+                    text = if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            BasicTextField(
+                state = state,
+                // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
+                // and deleting the space after a bullet ends it too. Done in the input pipeline rather than as
+                // key events, so a soft keyboard on Android behaves the same as a hardware Return.
+                inputTransformation = inputTransformation,
+                // The first line is a title only for local notes; an issue's body is just a body. Tabs are
+                // drawn at a real width in both cases.
+                outputTransformation = outputTransformation,
+                // The layout the overlay positions itself from.
+                onTextLayout = { getResult -> layout.value = getResult() },
+                lineLimits = TextFieldLineLimits.MultiLine(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                scrollState = scrollState,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .editorLayoutSemantics(layout, state)
+                        // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
+                        // otherwise let the key travel to the focus manager, which is why an indent was
+                        // impossible to type.
+                        .onPreviewKeyEvent { event ->
+                            val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
+                            if (indentKey) {
+                                edit(
+                                    if (event.isShiftPressed) {
+                                        outdentAtCaret(currentValue())
+                                    } else {
+                                        indentAtCaret(currentValue())
+                                    },
+                                )
+                                return@onPreviewKeyEvent true
+                            }
+                            // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
+                                edit(toggleChecklistState(currentValue()))
+                                return@onPreviewKeyEvent true
+                            }
+                            false
+                        },
+            )
+
+            // Nothing is drawn in it yet: phase 2 is the geometry, and the elements it composes are the boxes phase 3
+            // fills with a real control.
+            EditorOverlay(
+                text = state.text.toString(),
+                layout = layout.value,
+                scrollOffsetPx = scrollState.value.toFloat(),
+            )
+        }
     }
 }
 
