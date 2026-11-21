@@ -284,12 +284,3 @@ private fun lineStartOf(
     text: String,
     index: Int,
 ): Int = text.lastIndexOf('\n', index - 1).let { if (it == -1) 0 else it + 1 }
-
-private fun firstNonSpaceOf(
-    text: String,
-    lineStart: Int,
-): Int {
-    var index = lineStart
-    while (index < text.length && (text[index] == ' ' || text[index] == '\t')) index++
-    return index
-}

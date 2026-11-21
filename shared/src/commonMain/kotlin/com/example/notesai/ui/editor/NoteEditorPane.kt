@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +33,10 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.notesai.PendingEdit
@@ -40,6 +47,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.onEach
 import kotlin.time.Clock
 
 private const val WRITE_DEBOUNCE_MS = 300L
@@ -63,6 +71,8 @@ internal fun NoteEditorPane(
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
 ) {
+    val completion = document?.completion
+
     if (document == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
@@ -73,26 +83,43 @@ internal fun NoteEditorPane(
         return
     }
 
-    // Local state is the source of truth while editing; the DB write is the sink. It carries the
-    // selection too, because the bullet action has to put the caret after the marker it inserts.
-    // Keyed on the document's identity so it re-initializes only when a different note is selected,
+    // Local state is the source of truth while editing; the DB write is the sink. `TextFieldState` owns the text,
+    // the caret and the selection, which is what lets the field's own input pipeline apply the editing rules before
+    // anything is drawn. Keyed on the document's identity so it re-initializes only when a different note is selected,
     // so the async Flow re-emission from our own write can't clobber what's typed.
-    val textState = remember(document.ref) { mutableStateOf(TextFieldValue(document.content)) }
+    val state = remember(document.ref) { TextFieldState(document.content) }
 
     // When the buffer last changed *because the user changed it*. A save can happen much later than the keystroke --
     // the debounce waits for a pause, and disposing the editor flushes whatever is left -- and `updatedAt` has to
     // record the keystroke, not the save, because that is what the conflict tie-break compares.
     val lastTypedAt = remember(document.ref) { mutableStateOf(nowMillis()) }
 
+    /**
+     * The note as its own characters and caret. The editing rules (`toggleList`, `indentAtCaret`, the input pipeline)
+     * are written in these terms, so this is the adapter between them and `TextFieldState`.
+     */
+    fun currentValue(): TextFieldValue = TextFieldValue(state.text.toString(), TextRange(state.selection.start, state.selection.end))
+
+    /** Applies a rule's result: one edit, so undo and selection behave like typing does. */
     fun edit(newValue: TextFieldValue) {
-        textState.value = newValue
         lastTypedAt.value = nowMillis()
+        state.edit {
+            replace(0, length, newValue.text)
+            selection = TextRange(newValue.selection.start, newValue.selection.end)
+        }
     }
+
+    val inputTransformation = remember { editorInputTransformation() }
+    val outputTransformation =
+        remember(completion == null) { editorOutputTransformation(if (completion == null) TitleStyle else null) }
+    val layout = remember(document.ref) { mutableStateOf<TextLayoutResult?>(null) }
 
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
     LaunchedEffect(document.ref) {
-        snapshotFlow { textState.value.text }
+        snapshotFlow { state.text.toString() }
             .drop(1) // ignore the value already persisted
+            // Stamped before the debounce: the note's `updatedAt` records the keystroke, not the save.
+            .onEach { lastTypedAt.value = nowMillis() }
             .debounce(WRITE_DEBOUNCE_MS)
             .collectLatest { onChange(it, lastTypedAt.value) }
     }
@@ -105,17 +132,16 @@ internal fun NoteEditorPane(
     // composition to be disposed either: quitting runs it synchronously, which is one local transaction and no
     // network call.
     DisposableEffect(document.ref) {
-        pendingEdit.offer { onChange(textState.value.text, lastTypedAt.value) }
+        pendingEdit.offer { onChange(state.text.toString(), lastTypedAt.value) }
         onDispose {
             pendingEdit.withdraw()
-            onChange(textState.value.text, lastTypedAt.value)
+            onChange(state.text.toString(), lastTypedAt.value)
         }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // A GitHub issue has a title of its own, which is not the first line of its body, so it gets a
         // header instead of the first-line styling below.
-        val completion = document.completion
         if (completion != null) {
             Row(
                 modifier =
@@ -156,75 +182,122 @@ internal fun NoteEditorPane(
             verticalArrangement = Arrangement.Center,
         ) {
             TextButton(
-                onClick = { edit(toggleList(textState.value, ListKind.BULLET)) },
+                onClick = { edit(toggleList(currentValue(), ListKind.BULLET)) },
             ) {
                 Text("\u2022 Bullet list")
             }
             TextButton(
-                onClick = { edit(toggleList(textState.value, ListKind.DASH)) },
+                onClick = { edit(toggleList(currentValue(), ListKind.DASH)) },
             ) {
                 Text("${DASH_MARKER.trimEnd()} Dash list")
             }
             TextButton(
-                onClick = { edit(toggleList(textState.value, ListKind.NUMBERED)) },
+                onClick = { edit(toggleList(currentValue(), ListKind.NUMBERED)) },
             ) {
                 Text("${NUMBERED_MARKER.trimEnd()} Numbered list")
             }
             TextButton(
-                onClick = { edit(toggleList(textState.value, ListKind.CHECKLIST)) },
+                onClick = { edit(toggleList(currentValue(), ListKind.CHECKLIST)) },
             ) {
                 Text("\u25CB Checklist")
             }
             TextButton(
                 // Apple ticks by tapping the circle; a plain text field cannot tell which character was tapped, so
                 // the tick is an action on the caret's line — here and on Ctrl+Enter below.
-                onClick = { edit(toggleChecklistState(textState.value)) },
+                onClick = { edit(toggleChecklistState(currentValue())) },
             ) {
                 Text("\u2713 Tick item")
             }
         }
 
-        OutlinedTextField(
-            value = textState.value,
-            // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
-            // and deleting the space after a bullet ends it too. Done as part of the value change rather
-            // than as key events, so a soft keyboard on Android behaves the same as a hardware Return.
-            onValueChange = { edit(applyEditorTyping(textState.value, it)) },
-            // The first line is a title only for local notes; an issue's body is just a body. Tabs are
-            // drawn at a real width in both cases.
-            visualTransformation = EditorTransformation(titleStyle = if (completion == null) TitleStyle else null),
-            textStyle = MaterialTheme.typography.bodyLarge,
-            placeholder = {
-                Text(if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026")
-            },
+        // A `BasicTextField` rather than a Material outlined field, so the text is drawn at this Box's own origin.
+        // That is what lets the overlay be its sibling in the same coordinate space: no padding has to be guessed,
+        // which is the difference between a tap target that is on the circle and one that is near it.
+        val scrollState = rememberScrollState()
+
+        Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(Dimens.EditorPadding)
-                    // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
-                    // otherwise let the key travel to the focus manager, which is why an indent was
-                    // impossible to type.
-                    .onPreviewKeyEvent { event ->
-                        val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
-                        if (indentKey) {
-                            edit(
-                                if (event.isShiftPressed) {
-                                    outdentAtCaret(textState.value)
-                                } else {
-                                    indentAtCaret(textState.value)
-                                },
-                            )
-                            return@onPreviewKeyEvent true
-                        }
-                        // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
-                            edit(toggleChecklistState(textState.value))
-                            return@onPreviewKeyEvent true
-                        }
-                        false
-                    },
-        )
+                    .padding(Dimens.EditorPadding),
+        ) {
+            if (state.text.isEmpty()) {
+                Text(
+                    text = if (completion == null) "First line becomes the title\u2026" else "Issue body\u2026",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            BasicTextField(
+                state = state,
+                // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
+                // and deleting the space after a bullet ends it too. Done in the input pipeline rather than as
+                // key events, so a soft keyboard on Android behaves the same as a hardware Return.
+                inputTransformation = inputTransformation,
+                // The first line is a title only for local notes; an issue's body is just a body. Tabs are
+                // drawn at a real width in both cases.
+                outputTransformation = outputTransformation,
+                // The layout the overlay positions itself from.
+                onTextLayout = { getResult -> layout.value = getResult() },
+                lineLimits = TextFieldLineLimits.MultiLine(),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                scrollState = scrollState,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .editorLayoutSemantics(layout, state)
+                        // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
+                        // otherwise let the key travel to the focus manager, which is why an indent was
+                        // impossible to type.
+                        .onPreviewKeyEvent { event ->
+                            val indentKey = event.key == Key.Tab && event.type == KeyEventType.KeyDown
+                            if (indentKey) {
+                                edit(
+                                    if (event.isShiftPressed) {
+                                        outdentAtCaret(currentValue())
+                                    } else {
+                                        indentAtCaret(currentValue())
+                                    },
+                                )
+                                return@onPreviewKeyEvent true
+                            }
+                            // Ctrl+Enter ticks the current checklist item, the way Markdown All in One binds Alt+C.
+                            if (event.type == KeyEventType.KeyDown && event.key == Key.Enter && event.isCtrlPressed) {
+                                edit(toggleChecklistState(currentValue()))
+                                return@onPreviewKeyEvent true
+                            }
+                            false
+                        },
+            )
+
+            // Nothing is drawn in it yet: phase 2 is the geometry, and the elements it composes are the boxes phase 3
+            // fills with a real control.
+            EditorOverlay(
+                text = state.text.toString(),
+                layout = layout.value,
+                scrollOffsetPx = scrollState.value.toFloat(),
+            )
+        }
+    }
+}
+
+/** How many lines the field actually laid out. Phase 1's proof that `onTextLayout` reaches the app. */
+internal val EditorLineCountKey = SemanticsPropertyKey<Int>("EditorLineCount")
+
+/** Which laid-out line the caret is on, so a test can catch a caret that lands on a phantom line. */
+internal val EditorCaretLineKey = SemanticsPropertyKey<Int>("EditorCaretLine")
+
+private fun Modifier.editorLayoutSemantics(
+    layout: androidx.compose.runtime.MutableState<TextLayoutResult?>,
+    state: TextFieldState,
+): Modifier {
+    val lines = layout.value?.lineCount
+    val caretLine = layout.value?.getLineForOffset(state.selection.start.coerceIn(0, state.text.length))
+    return semantics {
+        if (lines != null) this[EditorLineCountKey] = lines
+        if (caretLine != null) this[EditorCaretLineKey] = caretLine
     }
 }
 
