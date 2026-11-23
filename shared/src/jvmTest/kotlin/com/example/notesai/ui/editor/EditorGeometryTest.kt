@@ -77,7 +77,7 @@ class EditorGeometryTest {
 
         val layouts = listOf(measure(note, 16f, 1f), measure(note, 22f, 2.5f))
         layouts.forEachIndexed { variant, layout ->
-            val placed = placeDecorations(note, layout)
+            val placed = placeDecorations(note, layout)!!
             assertEquals(decorations.size, placed.size, "variant $variant")
 
             placed.forEachIndexed { index, item ->
@@ -106,7 +106,7 @@ class EditorGeometryTest {
     fun aDecorationIsDrawnOnTheLineItBelongsTo() {
         val note = "[ ] one\n[ ] two"
         val layout = measure(note)
-        val placed = placeDecorations(note, layout)
+        val placed = placeDecorations(note, layout)!!
 
         assertEquals(note.indexOf("[ ] two"), placed.last().decoration.start, "the second marker's note offset")
         assertTrue(placed.last().bounds.top > placed.first().bounds.top, "and it is drawn on a later line")
@@ -121,7 +121,7 @@ class EditorGeometryTest {
     fun onlyDecorationsInTheViewportAreComposed() {
         val note = (1..40).joinToString("\n") { "[ ] item $it" }
         val layout = measure(note)
-        val placed = placeDecorations(note, layout)
+        val placed = placeDecorations(note, layout)!!
         assertEquals(40, placed.size)
 
         val lineHeight = layout.getLineBottom(0) - layout.getLineTop(0)
@@ -160,7 +160,7 @@ class EditorGeometryTest {
             onAllNodesWithTag(DECORATION_TAG_PREFIX + 2).assertCountEquals(0)
 
             // And the box reports the geometry computed for it.
-            val expected = placeDecorations(note, layout.value!!)
+            val expected = placeDecorations(note, layout.value!!)!!
             val node = onAllNodesWithTag(DECORATION_TAG_PREFIX + 0).fetchSemanticsNodes().single()
             assertEquals(expected.first().bounds, node.config.getOrNull(EditorDecorationBoundsKey))
 
@@ -182,7 +182,53 @@ class EditorGeometryTest {
         val raw = measurer.measure(text = AnnotatedString(note), constraints = Constraints(maxWidth = 600))
 
         assertEquals(2, raw.lineCount, "the raw text still has two lines")
-        assertEquals(emptyList(), placeDecorations(note, raw), "but its geometry is not in drawn coordinates")
-        assertEquals(2, placeDecorations(note, measure(note)).size, "the drawn layout places both")
+        assertEquals(null, placeDecorations(note, raw), "but it is not the layout of the drawn text, so nothing is placed")
+        assertEquals(2, placeDecorations(note, measure(note))!!.size, "the drawn layout places both")
+    }
+
+    @Test
+    fun theBoxDoesNotIncludeThePaddedSpaceOfAReplacedGlyph() {
+        // The drawn glyph is "○ " -- a circle and a space. The space is padding inside the text, so a hover highlight or
+        // a tick centred on the whole box ends up to the right of the circle. This is the regression that caused it.
+        val note = "[ ] milk"
+        val layout = measure(note)
+        val placed = placeDecorations(note, layout)!!.single()
+
+        val circle = layout.getBoundingBox(drawnOffset(note, 0))
+        assertTrue(
+            placed.bounds.width <= circle.width + 1f,
+            "box width ${placed.bounds.width} should be the circle's ${circle.width}, not the circle plus a space",
+        )
+        assertTrue(
+            abs(placed.bounds.right - circle.right) <= 1f,
+            "the right edge ${placed.bounds.right} should be the circle's ${circle.right}",
+        )
+        // The glyph box is tight around the circle and sits inside the hit target.
+        assertTrue(placed.glyphBounds.width <= placed.bounds.width + 0.5f)
+        assertTrue(placed.glyphBounds.top >= placed.bounds.top && placed.glyphBounds.bottom <= placed.bounds.bottom)
+    }
+
+    @Test
+    fun aStaleLayoutSaysNothingInsteadOfSayingEmpty() {
+        // `null` means "this layout is not mine", which is what lets the overlay keep its previous placement for one
+        // frame instead of flickering. An empty list would be "definitely no decorations".
+        val note = "[ ] milk"
+        val raw = measureRaw(note)
+        assertEquals(null, placeDecorations(note, raw))
+        assertEquals(1, placeDecorations(note, measure(note))!!.size, "the matching layout does place it")
+
+        val noDecorations = "just prose"
+        assertEquals(emptyList(), placeDecorations(noDecorations, measure(noDecorations)), "genuinely none")
+    }
+
+    /** The same text measured without the display edits, i.e. the layout a caller gets if it forgets them. */
+    private fun measureRaw(note: String): TextLayoutResult {
+        val measurer =
+            TextMeasurer(
+                defaultFontFamilyResolver = createFontFamilyResolver(),
+                defaultDensity = Density(1f, 1f),
+                defaultLayoutDirection = LayoutDirection.Ltr,
+            )
+        return measurer.measure(text = AnnotatedString(note), constraints = Constraints(maxWidth = 600))
     }
 }

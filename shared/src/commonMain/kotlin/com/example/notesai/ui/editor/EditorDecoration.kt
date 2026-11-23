@@ -25,10 +25,22 @@ internal data class EditorDecoration(
     val checked: Boolean = false,
     /** Only set for [Kind.LINK]: where a click should go. */
     val url: String? = null,
+    /** Only set for [Kind.NOTE_REFERENCE]: the note-uuid prefix the token names. */
+    val noteId: String? = null,
 ) {
     enum class Kind {
         CHECKLIST,
+
+        /** Text drawn as written, with a control over it that opens a URL. */
         LINK,
+
+        /**
+         * An inline widget: a token the text field cannot render, drawn by the overlay, atomic for the caret.
+         *
+         * The token itself stays in the text -- so it syncs, and an older build shows it as written -- and the chip the
+         * overlay draws on top of it has an opaque background, which is what hides the token from the reader.
+         */
+        NOTE_REFERENCE,
     }
 
     /**
@@ -39,18 +51,22 @@ internal data class EditorDecoration(
     val drawnGlyph: String?
         get() =
             when (kind) {
-                Kind.CHECKLIST -> if (checked) CHECKED_GLYPH else UNCHECKED_GLYPH
-                Kind.LINK -> null
+                // The same hollow circle either way: whether an item is done is drawn by the overlay as a tick, so
+                // the text does not carry two different glyphs for it. An older build still reads `[x]` in the note.
+                Kind.CHECKLIST -> CHECKLIST_GLYPH
+                // Drawn as written: a link keeps its characters, and a widget's token is covered by the chip the
+                // overlay draws over it (which is why no display edit is needed, and why an older build still reads).
+                Kind.LINK, Kind.NOTE_REFERENCE -> null
             }
 
     val range: IntRange get() = start until end
 
     companion object {
-        /** What an unticked checklist item is drawn as. */
-        const val UNCHECKED_GLYPH = "\u25CB "
+        /** What a checklist marker is drawn as, ticked or not. The tick itself is the overlay's. */
+        const val CHECKLIST_GLYPH = "\u25CB "
 
-        /** And a ticked one. */
-        const val CHECKED_GLYPH = "\u25C9 "
+        /** The tick the overlay draws inside a completed item's circle. */
+        const val TICK = "\u2713"
     }
 }
 
@@ -91,7 +107,24 @@ internal fun editorDecorations(text: String): List<EditorDecoration> =
                 ),
             )
         }
+        WidgetTokens.ranges(text).forEach { span ->
+            add(
+                EditorDecoration(
+                    kind = EditorDecoration.Kind.NOTE_REFERENCE,
+                    start = span.first,
+                    end = span.last + 1,
+                    noteId = WidgetTokens.noteReference(text, span),
+                ),
+            )
+        }
     }.sortedBy { it.start }
+        // One control per character. A token can appear inside a URL (`https://x/!n:1a2b3c4d`), which would otherwise
+        // put two overlapping boxes over the same text; the earlier decoration wins, so in that example the URL keeps
+        // its link and the token is left as text.
+        .fold(mutableListOf()) { kept, decoration ->
+            if (kept.none { it.start < decoration.end && decoration.start < it.end }) kept += decoration
+            kept
+        }
 
 /**
  * Where the first non-whitespace character of the line starting at [lineStart] is.

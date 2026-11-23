@@ -17,6 +17,7 @@ import com.example.notesai.ui.dialogs.MessageDialog
 import com.example.notesai.ui.dialogs.MoveNoteDialog
 import com.example.notesai.ui.dialogs.SyncErrorDialog
 import com.example.notesai.ui.dialogs.TextPromptDialog
+import com.example.notesai.ui.editor.WidgetTokens
 
 /**
  * Every dialog the notes screen can open, in one place.
@@ -48,6 +49,17 @@ internal fun NotesScreenDialogs(
             onApply = { from, to ->
                 state.issueFilter = state.issueFilter.createdBetween(from, to)
                 state.showDateRange = false
+            },
+        )
+    }
+
+    if (state.showLinkNotePicker) {
+        LinkNoteDialog(
+            notes = repository.allNotesNow().filter { it.deletedAt == null },
+            onDismiss = { state.showLinkNotePicker = false },
+            onPick = { uuid ->
+                state.pendingInsertion = " " + WidgetTokens.noteReferenceToken(uuid)
+                state.showLinkNotePicker = false
             },
         )
     }

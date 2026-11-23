@@ -13,6 +13,7 @@ import com.example.notesai.PendingEdit
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
+import com.example.notesai.data.noteTitle
 import com.example.notesai.github.GitHubIssueRepository
 import com.example.notesai.github.filteredBy
 import com.example.notesai.model.Completion
@@ -210,6 +211,19 @@ internal fun NotesScreen(
             // Local notes may follow their links; a GitHub issue body may not, because the browser would leave the
             // app for a page this note does not own.
             onOpenLink = if (state.selectedRef is NoteRef.Local) ::openInBrowser else null,
+            // Chips show the referenced note's title and jump to it; both need the note list, which the screen has.
+            onResolveNoteTitle = { id -> notes.firstOrNull { it.uuid.startsWith(id) }?.content?.noteTitle() },
+            onOpenNote = { id ->
+                notes.firstOrNull { it.uuid.startsWith(id) }?.let { state.selectedRef = NoteRef.Local(it.id) }
+            },
+            onLinkNote =
+                if (state.selectedRef is NoteRef.Local) {
+                    { state.showLinkNotePicker = true }
+                } else {
+                    null
+                },
+            pendingInsertion = state.pendingInsertion,
+            onInsertionConsumed = { state.pendingInsertion = null },
             onOpenOnGitHub =
                 (state.selectedRef as? NoteRef.GitHubIssue)?.let { ref ->
                     gitHubRepos.firstOrNull { it.id == ref.repoId }?.let { repo ->

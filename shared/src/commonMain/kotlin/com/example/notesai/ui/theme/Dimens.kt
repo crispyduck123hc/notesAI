@@ -49,4 +49,7 @@ object Dimens {
 
     /** Vertical padding on a list-ish row. */
     val RowPadding = 8.dp
+
+    /** Height cap for a scrollable list inside a dialog, so it cannot grow past the window. */
+    val DialogListMaxHeight = 320.dp
 }
