@@ -227,6 +227,7 @@ class GitHubFolderUiTest {
                 onNodeWithText("Open 1", substring = true).assertExists()
                 onNodeWithText("Closed 1", substring = true).assertExists()
 
+                // The state toggles keep the menu open, so both clicks land in one opening.
                 onNodeWithText("Closed 1", substring = true).performClick()
 
                 waitUntil(timeoutMillis = 5_000) {
@@ -238,7 +239,6 @@ class GitHubFolderUiTest {
                 )
 
                 // And turning closed back on restores the row: the mirror was never touched.
-                openFilterMenu()
                 onNodeWithText("Closed 1", substring = true).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$closed already done").fetchSemanticsNodes().isNotEmpty()
@@ -264,15 +264,14 @@ class GitHubFolderUiTest {
                 openFilterMenu()
 
                 onNodeWithText("Open 1", substring = true).performClick()
-                openFilterMenu()
                 onNodeWithText("Closed 0", substring = true).performClick()
 
                 // No rows, and the node is no longer expandable — an empty branch rather than a mystery.
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isEmpty()
                 }
-                // The counts still say what exists, which is what stops this looking like data loss.
-                openFilterMenu()
+                // The counts still say what exists, which is what stops this looking like data loss —
+                // and the menu is still open, because the state toggles keep it open by design.
                 onNodeWithText("Open 1", substring = true).assertExists()
             } finally {
                 fixture.close()

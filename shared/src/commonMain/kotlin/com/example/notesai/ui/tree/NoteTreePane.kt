@@ -320,21 +320,18 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
             // The counts travel with the labels, so the menu is legible before it is used. Both on is
             // "everything", one on is a filter, neither is "nothing" — which the tree then shows as an
             // unexpandable node rather than a silent empty list.
+            // The state toggles stay open on click — flipping both states is one adjustment, and the
+            // checkboxes would be pointless if every click threw the menu away. The date picks below
+            // close it: a range is one decisive choice, and the custom one hands over to the calendar.
             DropdownMenuItem(
                 text = { Text("Open ${gitHub.openCount}") },
                 leadingIcon = { Checkbox(checked = gitHub.filter.showOpen, onCheckedChange = null) },
-                onClick = {
-                    gitHub.onFilterOpen()
-                    filterMenuExpanded = false
-                },
+                onClick = { gitHub.onFilterOpen() },
             )
             DropdownMenuItem(
                 text = { Text("Closed ${gitHub.closedCount}") },
                 leadingIcon = { Checkbox(checked = gitHub.filter.showClosed, onCheckedChange = null) },
-                onClick = {
-                    gitHub.onFilterClosed()
-                    filterMenuExpanded = false
-                },
+                onClick = { gitHub.onFilterClosed() },
             )
             HorizontalDivider()
 
