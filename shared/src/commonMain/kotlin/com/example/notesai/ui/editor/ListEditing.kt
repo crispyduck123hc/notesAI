@@ -165,7 +165,11 @@ fun applyEditorTyping(
 ): TextFieldValue =
     promoteListShortcut(previous, current)
         ?: endListOnMarkerSpaceDeletion(previous, current)
+        // Before `continueList`, which returns the unchanged value rather than null when it does not apply -- so
+        // anything placed after it in this chain is unreachable.
+        ?: deleteWholeWidgetToken(previous, current)
         ?: continueList(previous, current)
+        ?: current
 
 /**
  * Continues a list item when Enter is pressed, and ends the list when the item is empty.
@@ -285,7 +289,7 @@ private fun singleInsertionAt(
  * The returned index is the position in the *new* text where the deleted character used to be, so a backspace and
  * a forward delete both report the same place.
  */
-private fun singleDeletionAt(
+internal fun singleDeletionAt(
     previous: TextFieldValue,
     current: TextFieldValue,
 ): Int? {

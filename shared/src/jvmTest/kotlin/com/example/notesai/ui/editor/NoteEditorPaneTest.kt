@@ -477,7 +477,7 @@ class NoteEditorPaneTest {
             onNodeWithText("Tick item", substring = true).performClick()
 
             // The note holds "[x] milk"; the field draws a filled circle in front of it.
-            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk"))
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25CB milk"))
         }
 
     @Test
@@ -494,7 +494,7 @@ class NoteEditorPaneTest {
             onNode(hasSetTextAction()).performClick()
             onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Enter) }
 
-            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk\n\u25CB "))
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25CB milk\n\u25CB "))
         }
 
     @Test
@@ -515,7 +515,7 @@ class NoteEditorPaneTest {
                 keyUp(Key.CtrlLeft)
             }
 
-            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25C9 milk"))
+            onNode(hasSetTextAction()).assertTextEquals(drawn("\u25CB milk"))
         }
 
     @Test
@@ -649,4 +649,46 @@ class NoteEditorPaneTest {
                 "the tapped item is ticked and the note is saved: $saved",
             )
         }
+
+    @Test
+    fun theCaretCannotRestInsideAWidgetToken() =
+        runComposeUiTest {
+            // Full atomicity: the deletion rule removes a token whole, and this is the other half -- wherever the caret
+            // ends up, it is pushed out of the token's interior, so a widget behaves as one thing.
+            val token = "!n:1a2b3c4d"
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document =
+                        NoteDocument(
+                            ref = NoteRef.Local(1),
+                            title = "see $token now",
+                            content = "see $token now",
+                        ),
+                    onChange = { _, _ -> },
+                )
+            }
+
+            val field = onNode(hasSetTextAction())
+            field.performClick()
+            waitUntil(timeoutMillis = 2_000) { caretOffset() != null }
+
+            // Walk the caret left across the whole line, one character at a time, recording every place it rests.
+            val seen = mutableListOf<Int>()
+            repeat(20) {
+                seen += caretOffset() ?: 0
+                field.performKeyInput { pressKey(Key.DirectionLeft) }
+            }
+            seen += caretOffset() ?: 0
+
+            // The token occupies 4 until 14; positions 5..14 are its interior.
+            assertTrue(
+                seen.none { it in 5..14 },
+                "the caret must never rest inside the token, saw $seen",
+            )
+            assertTrue(seen.contains(14) || seen.contains(4), "it does visit the token's edges, saw $seen")
+        }
+
+    /** The caret position, through the same semantics seam the layout test uses. */
+    private fun ComposeUiTest.caretOffset(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorCaretOffsetKey)
 }

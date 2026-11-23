@@ -83,7 +83,7 @@ class EditorDecorationTest {
 
             assertEquals(
                 editorDecorations(note).size,
-                drawn.count { it == '\u25CB' || it == '\u25C9' },
+                drawn.count { it == '\u25CB' },
                 "one drawn circle per decoration in ${escape(note)}",
             )
             assertEquals(

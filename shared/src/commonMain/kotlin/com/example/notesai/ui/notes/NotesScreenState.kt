@@ -45,6 +45,17 @@ internal class NotesScreenState(
     var renamingFolderId by mutableStateOf<Long?>(null)
     var movingNoteId by mutableStateOf<Long?>(null)
     var showConflicts by mutableStateOf(false)
+
+    /** The "link a note" picker is open. */
+    var showLinkNotePicker by mutableStateOf(false)
+
+    /**
+     * A widget token waiting to be inserted at the editor's caret.
+     *
+     * The picker lives here (it needs the note list) but the caret lives in the editor's `TextFieldState`, so the token
+     * is handed over and the editor inserts and consumes it. One-way, and cleared on the way back.
+     */
+    var pendingInsertion by mutableStateOf<String?>(null)
     var showSyncError by mutableStateOf(false)
 
     // GitHub folder state. `gitHubBusy` guards the buttons: a pull is a network round trip, and pressing it twice

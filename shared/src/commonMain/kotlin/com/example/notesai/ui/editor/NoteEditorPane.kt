@@ -72,6 +72,15 @@ internal fun NoteEditorPane(
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
     onOpenLink: ((String) -> Unit)? = null,
+    /** Title of the note a reference token names, so a chip can show it. */
+    onResolveNoteTitle: (String) -> String? = { null },
+    /** Called when a note-reference chip is activated, with the note-uuid prefix. */
+    onOpenNote: ((String) -> Unit)? = null,
+    /** Called by the toolbar's link button; the screen owns the picker, because it already has the note tree. */
+    onLinkNote: (() -> Unit)? = null,
+    /** A token the screen wants inserted at the caret. Consumed once, then cleared through [onInsertionConsumed]. */
+    pendingInsertion: String? = null,
+    onInsertionConsumed: () -> Unit = {},
 ) {
     val completion = document?.completion
 
@@ -117,6 +126,38 @@ internal fun NoteEditorPane(
     val layout = remember(document.ref) { mutableStateOf<TextLayoutResult?>(null) }
 
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
+    // A widget is one thing, so the caret may not sit inside it. This repairs whatever moved it there -- an arrow key,
+    // a click near its edge, Home/End, an IME -- rather than reimplementing cursor movement to prevent it.
+    LaunchedEffect(document.ref) {
+        var previous = state.selection.start
+        snapshotFlow { state.selection to state.text.toString() }
+            .collect { (selection, text) ->
+                if (!selection.collapsed) {
+                    previous = selection.start
+                    return@collect
+                }
+                val snapped = snapCaretOutOfWidgets(text, from = previous, to = selection.start)
+                previous = snapped
+                if (snapped != selection.start) {
+                    state.edit { this.selection = TextRange(snapped) }
+                }
+            }
+    }
+
+    // A widget token chosen in the screen's picker is inserted where the caret is, as one edit, and then consumed.
+    LaunchedEffect(pendingInsertion) {
+        val token = pendingInsertion ?: return@LaunchedEffect
+        val value = currentValue()
+        val at = value.selection.min.coerceIn(0, value.text.length)
+        edit(
+            value.copy(
+                text = value.text.substring(0, at) + token + value.text.substring(at),
+                selection = TextRange(at + token.length),
+            ),
+        )
+        onInsertionConsumed()
+    }
+
     LaunchedEffect(document.ref) {
         snapshotFlow { state.text.toString() }
             .drop(1) // ignore the value already persisted
@@ -210,6 +251,9 @@ internal fun NoteEditorPane(
             ) {
                 Text("\u2713 Tick item")
             }
+            if (onLinkNote != null) {
+                TextButton(onClick = onLinkNote) { Text("\u21aa Link note") }
+            }
         }
 
         // A `BasicTextField` rather than a Material outlined field, so the text is drawn at this Box's own origin.
@@ -289,6 +333,8 @@ internal fun NoteEditorPane(
                 // addressed by position instead of by the caret's line. The text stays the document.
                 onDecorationClick = { decoration -> edit(toggleChecklistAt(currentValue(), decoration.start)) },
                 onLinkClick = onOpenLink,
+                onResolveNoteTitle = onResolveNoteTitle,
+                onOpenNote = onOpenNote,
             )
         }
     }
@@ -300,6 +346,9 @@ internal val EditorLineCountKey = SemanticsPropertyKey<Int>("EditorLineCount")
 /** Which laid-out line the caret is on, so a test can catch a caret that lands on a phantom line. */
 internal val EditorCaretLineKey = SemanticsPropertyKey<Int>("EditorCaretLine")
 
+/** The caret's offset in the note, so a test can assert where it is allowed to rest. */
+internal val EditorCaretOffsetKey = SemanticsPropertyKey<Int>("EditorCaretOffset")
+
 private fun Modifier.editorLayoutSemantics(
     layout: androidx.compose.runtime.MutableState<TextLayoutResult?>,
     state: TextFieldState,
@@ -309,6 +358,7 @@ private fun Modifier.editorLayoutSemantics(
     return semantics {
         if (lines != null) this[EditorLineCountKey] = lines
         if (caretLine != null) this[EditorCaretLineKey] = caretLine
+        this[EditorCaretOffsetKey] = state.selection.start
     }
 }
 

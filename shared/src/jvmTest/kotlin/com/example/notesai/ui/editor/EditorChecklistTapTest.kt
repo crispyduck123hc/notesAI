@@ -10,11 +10,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -213,4 +216,140 @@ class EditorChecklistTapTest {
                 "an inert link must not advertise a click action",
             )
         }
+
+    @Test
+    fun aNoteReferenceIsAChipThatOpensTheNoteItNames() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            val feature = Feature("see !n:1a2b3c4d for details")
+            val opened = mutableListOf<String>()
+            setContent {
+                Box(modifier = Modifier.size(width = 600.dp, height = 300.dp)) {
+                    BasicTextField(
+                        state = feature.state,
+                        outputTransformation = editorOutputTransformation(),
+                        onTextLayout = { getResult -> feature.layout.value = getResult() },
+                    )
+                    EditorOverlay(
+                        text = feature.state.text.toString(),
+                        layout = feature.layout.value,
+                        onResolveNoteTitle = { id -> "Meeting notes ($id)" },
+                        onOpenNote = { opened += it },
+                    )
+                }
+            }
+            repeat(FRAMES_TO_SETTLE) { mainClock.advanceTimeByFrame() }
+
+            // The chip is one element, sized to the token it covers, and announced as a button.
+            val node = onNodeWithTag(DECORATION_TAG_PREFIX + 0)
+            node.assert(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick))
+            node.performClick()
+
+            assertEquals(listOf("1a2b3c4d"), opened, "the chip opens the note its token names")
+            assertEquals("see !n:1a2b3c4d for details", feature.state.text.toString(), "a chip click is not an edit")
+        }
+
+    @Test
+    fun aReferenceChipCoversItsTokenAndSaysWhenTheNoteIsGone() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            val feature = Feature("gone: !n:ffffffff")
+            setContent {
+                Box(modifier = Modifier.size(width = 600.dp, height = 300.dp)) {
+                    BasicTextField(
+                        state = feature.state,
+                        outputTransformation = editorOutputTransformation(),
+                        onTextLayout = { getResult -> feature.layout.value = getResult() },
+                    )
+                    // No resolver: the chip has nothing to show, and must say so rather than render an empty box.
+                    EditorOverlay(
+                        text = feature.state.text.toString(),
+                        layout = feature.layout.value,
+                    )
+                }
+            }
+            repeat(FRAMES_TO_SETTLE) { mainClock.advanceTimeByFrame() }
+
+            onNodeWithText("missing note").assertExists()
+        }
+
+    @Test
+    fun aCompletedItemShowsATickInsideItsCircle() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            val feature = Feature("[x] done\n[ ] todo")
+            setContent {
+                Box(modifier = Modifier.size(width = 600.dp, height = 300.dp)) {
+                    BasicTextField(
+                        state = feature.state,
+                        outputTransformation = editorOutputTransformation(),
+                        onTextLayout = { getResult -> feature.layout.value = getResult() },
+                    )
+                    EditorOverlay(
+                        text = feature.state.text.toString(),
+                        layout = feature.layout.value,
+                        onDecorationClick = { decoration ->
+                            feature.state.edit {
+                                val updated =
+                                    toggleChecklistAt(
+                                        androidx.compose.ui.text.input.TextFieldValue(
+                                            text = feature.state.text.toString(),
+                                            selection =
+                                                androidx.compose.ui.text
+                                                    .TextRange(0),
+                                        ),
+                                        decoration.start,
+                                    )
+                                replace(0, length, updated.text)
+                            }
+                        },
+                    )
+                }
+            }
+            repeat(FRAMES_TO_SETTLE) { mainClock.advanceTimeByFrame() }
+
+            // Exactly one tick, on the completed item.
+            // Unmerged on purpose: the tick is marked invisible to accessibility, so it is not folded into the
+            // checkbox's merged node -- but it is still in the tree, which is how a test can see it.
+            val ticks = onAllNodesWithText(EditorDecoration.TICK, useUnmergedTree = true).fetchSemanticsNodes()
+            assertEquals(1, ticks.size, "one tick for one completed item")
+
+            // Tick the second item: now there are two.
+            onNodeWithTag(DECORATION_TAG_PREFIX + 1).performClick()
+            repeat(FRAMES_TO_SETTLE) { mainClock.advanceTimeByFrame() }
+            val after = onAllNodesWithText(EditorDecoration.TICK, useUnmergedTree = true).fetchSemanticsNodes()
+            assertEquals(2, after.size, "the newly completed item grows a tick")
+            assertEquals("[x] done\n[x] todo", feature.state.text.toString())
+        }
+
+    @Test
+    fun theTickSurvivesEveryFrameOfAnEdit() =
+        runComposeUiTest {
+            // The flicker: on each keystroke the note's text changes one frame before the field reports a new layout, and
+            // the overlay used to clear itself for that frame. Now it keeps the last good placement, so the tick is
+            // present on every frame -- checked by advancing one frame at a time and looking after each one.
+            mainClock.autoAdvance = false
+            val feature = Feature("[x] done")
+            setContent {
+                Box(modifier = Modifier.size(width = 600.dp, height = 300.dp)) {
+                    BasicTextField(
+                        state = feature.state,
+                        outputTransformation = editorOutputTransformation(),
+                        onTextLayout = { getResult -> feature.layout.value = getResult() },
+                    )
+                    EditorOverlay(text = feature.state.text.toString(), layout = feature.layout.value)
+                }
+            }
+            repeat(FRAMES_TO_SETTLE) { mainClock.advanceTimeByFrame() }
+            assertEquals(1, tickCount(), "the tick starts out there")
+
+            // Type, then look on every frame: never absent, never doubled.
+            feature.state.edit { append("!") }
+            repeat(6) {
+                mainClock.advanceTimeByFrame()
+                assertEquals(1, tickCount(), "the tick must not flicker while the text changes")
+            }
+        }
+
+    private fun ComposeUiTest.tickCount(): Int = onAllNodesWithText(EditorDecoration.TICK, useUnmergedTree = true).fetchSemanticsNodes().size
 }
