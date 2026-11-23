@@ -10,7 +10,7 @@ import com.example.notesai.model.NoteRef
 import com.example.notesai.model.gitHubRepoNodeId
 import com.example.notesai.ui.dialogs.ConflictDialog
 import com.example.notesai.ui.dialogs.ConflictUiItem
-import com.example.notesai.ui.dialogs.DateRangeDialog
+import com.example.notesai.ui.dialogs.DateRangeCalendarDialog
 import com.example.notesai.ui.dialogs.FolderNameDialog
 import com.example.notesai.ui.dialogs.LinkRepoDialog
 import com.example.notesai.ui.dialogs.MessageDialog
@@ -42,7 +42,7 @@ internal fun NotesScreenDialogs(
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
 ) {
     if (state.showDateRange) {
-        DateRangeDialog(
+        DateRangeCalendarDialog(
             from = state.issueFilter.createdFrom,
             to = state.issueFilter.createdTo,
             onDismiss = { state.showDateRange = false },

@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,10 +40,12 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.example.notesai.PendingEdit
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.theme.Dimens
+import com.example.notesai.ui.theme.DateRangeIcon
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -68,6 +71,8 @@ internal fun NoteEditorPane(
     onChange: (text: String, lastTypedAtMillis: Long) -> Unit,
     /** Null for local notes, which have no state to toggle. */
     onToggleComplete: (() -> Unit)? = null,
+    /** Opens the issue-list date-range calendar; non-null only while a GitHub issue is open. */
+    onPickCalendarRange: (() -> Unit)? = null,
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
@@ -213,6 +218,17 @@ internal fun NoteEditorPane(
                     Spacer(modifier = Modifier.width(Dimens.Gutter))
                     TextButton(onClick = onToggleComplete) {
                         Text(if (completion == Completion.Closed) "Reopen" else "Mark complete")
+                    }
+                }
+                // The issue-list date filter, one tap away from the list it filters. Lives at the row's
+                // end — to the right of Mark complete/Reopen — and only for GitHub issues, because a
+                // local note has no date filter to open.
+                if (onPickCalendarRange != null) {
+                    Spacer(modifier = Modifier.width(Dimens.Gutter))
+                    TextButton(onClick = onPickCalendarRange) {
+                        Icon(DateRangeIcon, contentDescription = "Filter issues by opened date")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Dates")
                     }
                 }
             }
