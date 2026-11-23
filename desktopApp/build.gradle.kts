@@ -1,3 +1,9 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.TaskAction
+import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import java.io.BufferedOutputStream
 import java.io.File
@@ -5,11 +11,6 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
-import org.gradle.api.DefaultTask
-import org.gradle.api.GradleException
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.TaskAction
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -147,19 +148,24 @@ abstract class TrimPackagedJars : DefaultTask() {
             return
         }
 
-        val nativesToKeep = when {
-            org.gradle.internal.os.OperatingSystem.current().isMacOsX -> setOf("Mac")
-            org.gradle.internal.os.OperatingSystem.current().isWindows -> setOf("Windows")
-            org.gradle.internal.os.OperatingSystem.current().isLinux -> setOf("Linux", "Linux-Musl")
-            else -> null // unknown host: trim nothing, rather than guess wrong
-        }
+        val host = OperatingSystem.current()
+        val nativesToKeep =
+            when {
+                host.isMacOsX -> setOf("Mac")
+                host.isWindows -> setOf("Windows")
+                host.isLinux -> setOf("Linux", "Linux-Musl")
+                else -> null // unknown host: trim nothing, rather than guess wrong
+            }
 
         var savedBytes = 0L
-        root
-            .walkTopDown()
-            .filter { it.isFile && it.name.endsWith(".jar") }
-            .forEach { jar ->
-                val removed = when {
+        val jars =
+            root
+                .walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".jar") }
+                .toList()
+        for (jar in jars) {
+            val removed =
+                when {
                     jar.name.startsWith("skiko-awt-runtime-") ->
                         rewrite(jar) { entry -> entry.name.startsWith("libskiko-") }
 
@@ -168,11 +174,11 @@ abstract class TrimPackagedJars : DefaultTask() {
 
                     else -> null
                 }
-                if (removed != null) {
-                    savedBytes += removed
-                    logger.lifecycle("Trim: removed ${removed / 1024} KB from ${jar.relativeTo(root)}")
-                }
+            if (removed != null) {
+                savedBytes += removed
+                logger.lifecycle("Trim: removed ${removed / 1024} KB from ${jar.relativeTo(root)}")
             }
+        }
         logger.lifecycle("Trim: saved ${savedBytes / 1024 / 1024} MB")
     }
 
