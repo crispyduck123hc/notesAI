@@ -345,6 +345,8 @@ class GitHubFolderUiTest {
                 }
 
                 onNodeWithText("Custom", substring = true).performClick()
+                // The custom chip now opens the calendar; typing the exact dates is the fallback path.
+                onNodeWithText("Type dates…").performClick()
                 onAllNodes(hasSetTextAction())[0].performTextInput("2026-03-01")
                 onAllNodes(hasSetTextAction())[1].performTextInput("2026-03-31")
                 onNodeWithText("Apply").performClick()

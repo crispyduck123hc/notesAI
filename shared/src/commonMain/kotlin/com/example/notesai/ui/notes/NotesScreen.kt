@@ -242,6 +242,14 @@ internal fun NotesScreen(
                         }
                     }
                 },
+            // Only GitHub issues get the date-range calendar: it filters the issue list, and a local
+            // note has no list of dated rows behind it. Non-null exactly when the header row renders.
+            onPickCalendarRange =
+                (state.selectedRef as? NoteRef.GitHubIssue)?.let {
+                    {
+                        state.showDateRange = true
+                    }
+                },
         )
     }
 
