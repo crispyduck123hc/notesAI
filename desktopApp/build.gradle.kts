@@ -1,4 +1,15 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.io.BufferedOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.TaskAction
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -88,6 +99,120 @@ compose.desktop {
                 // and offers an upgrade, rather than leaving two copies behind.
                 upgradeUuid = "8a479580-649e-4a8e-9aa9-53486e2896cb"
             }
+        }
+    }
+}
+
+// ---- Package trimming -------------------------------------------------------
+// Two jars on the packaged classpath carry bytes no packaged app ever executes:
+//
+// skiko-awt-runtime-*.jar  — the packaging plugin already extracts the host's Skia
+//   native (libskiko-*.dylib/.so/.dll) next to the jars and loads it from disk, but
+//   the jar it leaves behind still contains Skia natives inside (skiko ships a fat
+//   runtime jar with every architecture). Those entries are dead weight: the loader
+//   reads the file beside the jar, never the resource.
+//
+// sqlite-jdbc-*.jar — org.xerial bundles the SQLite native for *every* platform it
+//   supports (macOS x86_64 + aarch64, Windows x86/x64/arm, Linux in six flavours,
+//   FreeBSD, musl, Android). A packaged app runs exactly one OS, so every other
+//   directory under org/sqlite/native/ is never touched.
+//
+// The task rewrites those jars in the app image (idempotently — a jar with nothing
+// left to remove is left untouched) after createDistributable and before any package
+// task, so the DMG/MSI/DEB are built from the trimmed image.
+val trimPackagedJars by tasks.registering(TrimPackagedJars::class) {
+    appImageRoot.set(layout.buildDirectory.dir("compose/binaries/main/app"))
+}
+
+// Ordering only: mustRunAfter does not create a dependency, it just guarantees the
+// image exists (and is fresh) before the rewrite walks it. The dependency comes from
+// the package tasks below, which is also what keeps packageRelease* wired correctly.
+trimPackagedJars.configure {
+    mustRunAfter(tasks.matching { it.name.startsWith("create") && it.name.endsWith("Distributable") })
+}
+
+tasks.matching { it.name.startsWith("package") }.configureEach {
+    dependsOn(trimPackagedJars)
+}
+
+abstract class TrimPackagedJars : DefaultTask() {
+    @get:Internal
+    abstract val appImageRoot: DirectoryProperty
+
+    @TaskAction
+    fun trim() {
+        val root = appImageRoot.get().asFile
+        if (!root.isDirectory) {
+            logger.warn("Trim: no app image at $root — nothing to do (run createDistributable first)")
+            return
+        }
+
+        val nativesToKeep = when {
+            org.gradle.internal.os.OperatingSystem.current().isMacOsX -> setOf("Mac")
+            org.gradle.internal.os.OperatingSystem.current().isWindows -> setOf("Windows")
+            org.gradle.internal.os.OperatingSystem.current().isLinux -> setOf("Linux", "Linux-Musl")
+            else -> null // unknown host: trim nothing, rather than guess wrong
+        }
+
+        var savedBytes = 0L
+        root
+            .walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".jar") }
+            .forEach { jar ->
+                val removed = when {
+                    jar.name.startsWith("skiko-awt-runtime-") ->
+                        rewrite(jar) { entry -> entry.name.startsWith("libskiko-") }
+
+                    jar.name.startsWith("sqlite-jdbc-") && nativesToKeep != null ->
+                        rewrite(jar) { entry -> !sqliteNativeWanted(entry.name, nativesToKeep) }
+
+                    else -> null
+                }
+                if (removed != null) {
+                    savedBytes += removed
+                    logger.lifecycle("Trim: removed ${removed / 1024} KB from ${jar.relativeTo(root)}")
+                }
+            }
+        logger.lifecycle("Trim: saved ${savedBytes / 1024 / 1024} MB")
+    }
+
+    /**
+     * True when the SQLite native under `org/sqlite/native/<dir>/` is one the host could
+     * ever load. `Linux-Android` and `FreeBSD` are always dropped — no desktop target
+     * uses them; everything else is decided by the packaging host's OS.
+     */
+    private fun sqliteNativeWanted(
+        entryName: String,
+        kept: Set<String>,
+    ): Boolean {
+        val prefix = "org/sqlite/native/"
+        if (!entryName.startsWith(prefix)) return true // classes, metadata, everything else
+        val dir = entryName.removePrefix(prefix).substringBefore('/')
+        return dir in kept
+    }
+
+    /** Copies every entry except those matching [isRemoved]. Returns bytes saved, or null when there was nothing to remove. */
+    private fun rewrite(
+        jar: File,
+        isRemoved: (ZipEntry) -> Boolean,
+    ): Long? {
+        ZipFile(jar).use { zip ->
+            if (zip.entries().asSequence().none(isRemoved)) return null
+            val tmp = File(jar.parentFile, jar.name + ".trim")
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(tmp))).use { out ->
+                for (entry in zip.entries()) {
+                    if (isRemoved(entry)) continue
+                    out.putNextEntry(ZipEntry(entry.name))
+                    if (!entry.isDirectory) zip.getInputStream(entry).use { it.copyTo(out) }
+                    out.closeEntry()
+                }
+            }
+            val saved = jar.length() - tmp.length()
+            if (!tmp.renameTo(jar)) {
+                tmp.delete()
+                throw GradleException("Trim: could not replace ${jar.name}")
+            }
+            return saved
         }
     }
 }
