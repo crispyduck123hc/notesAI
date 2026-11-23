@@ -1,7 +1,7 @@
 package com.example.notesai.ui.tree
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +23,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -299,40 +306,53 @@ private fun GitHubSection(gitHub: GitHubPaneState) {
         Text(if (gitHub.repos.isEmpty()) "Link a repository\u2026" else "Link another repository\u2026")
     }
 
-    // Two state chips, independent of each other: both on is "everything", one on is a filter, neither is
-    // "nothing" — which the tree then shows as an unexpandable node rather than a silent empty list.
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // One control instead of a wall of chips. Both filter dimensions — which states, how far back —
+    // live in a dropdown menu; the chip itself only says "Filter", plus a summary when anything is
+    // actually filtering, because a default filter deserves no words.
+    var filterMenuExpanded by remember { mutableStateOf(false) }
+    Box {
         FilterChip(
-            selected = gitHub.filter.showOpen,
-            onClick = gitHub.onFilterOpen,
-            label = { Text("Open ${gitHub.openCount}") },
+            selected = gitHub.filter.isFiltering(),
+            onClick = { filterMenuExpanded = true },
+            label = { Text(gitHub.filter.summary()) },
         )
-        Spacer(modifier = Modifier.width(4.dp))
-        FilterChip(
-            selected = gitHub.filter.showClosed,
-            onClick = gitHub.onFilterClosed,
-            label = { Text("Closed ${gitHub.closedCount}") },
-        )
-    }
-
-    // A second row: the date dimension. Short labels because the pane is 280dp wide on a phone. The custom chip
-    // shows the dates it stands for, so the filter never says "custom" without saying what it is.
-    FlowRow(modifier = Modifier.fillMaxWidth()) {
-        CreatedWithin.entries.forEach { range ->
-            val label =
-                if (range == CreatedWithin.CUSTOM) {
-                    gitHub.filter.calendarRangeLabel ?: range.label
-                } else {
-                    "Opened ${range.label}"
-                }
-            FilterChip(
-                selected = gitHub.filter.createdWithin == range,
-                onClick = {
-                    if (range == CreatedWithin.CUSTOM) gitHub.onPickCalendarRange() else gitHub.onCreatedWithin(range)
-                },
-                label = { Text(label) },
-                modifier = Modifier.padding(end = 4.dp),
+        DropdownMenu(expanded = filterMenuExpanded, onDismissRequest = { filterMenuExpanded = false }) {
+            // The counts travel with the labels, so the menu is legible before it is used. Both on is
+            // "everything", one on is a filter, neither is "nothing" — which the tree then shows as an
+            // unexpandable node rather than a silent empty list.
+            // The state toggles stay open on click — flipping both states is one adjustment, and the
+            // checkboxes would be pointless if every click threw the menu away. The date picks below
+            // close it: a range is one decisive choice, and the custom one hands over to the calendar.
+            DropdownMenuItem(
+                text = { Text("Open ${gitHub.openCount}") },
+                leadingIcon = { Checkbox(checked = gitHub.filter.showOpen, onCheckedChange = null) },
+                onClick = { gitHub.onFilterOpen() },
             )
+            DropdownMenuItem(
+                text = { Text("Closed ${gitHub.closedCount}") },
+                leadingIcon = { Checkbox(checked = gitHub.filter.showClosed, onCheckedChange = null) },
+                onClick = { gitHub.onFilterClosed() },
+            )
+            HorizontalDivider()
+
+            // The date dimension. Short labels because the pane is 280dp wide on a phone; the custom entry
+            // shows the dates it stands for, so the filter never says "custom" without saying what it is.
+            CreatedWithin.entries.forEach { range ->
+                val label =
+                    if (range == CreatedWithin.CUSTOM) {
+                        gitHub.filter.calendarRangeLabel ?: "Custom\u2026"
+                    } else {
+                        "Opened ${range.label}"
+                    }
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Checkbox(checked = gitHub.filter.createdWithin == range, onCheckedChange = null) },
+                    onClick = {
+                        if (range == CreatedWithin.CUSTOM) gitHub.onPickCalendarRange() else gitHub.onCreatedWithin(range)
+                        filterMenuExpanded = false
+                    },
+                )
+            }
         }
     }
 

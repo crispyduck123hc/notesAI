@@ -147,6 +147,30 @@ data class IssueFilter(
             createdFrom = from,
             createdTo = to,
         )
+
+    /** Whether anything is actually filtering — a default filter is just "everything", which deserves no words. */
+    fun isFiltering(): Boolean =
+        !showOpen || !showClosed || createdWithin != CreatedWithin.ANY_TIME
+
+    /** What the filter chip reads: "Filter" when everything is on and any time, or a summary of what is off. */
+    fun summary(): String {
+        val state =
+            when {
+                showOpen && showClosed -> null
+                showOpen -> "open"
+                showClosed -> "closed"
+                else -> "none"
+            }
+        val time =
+            when (createdWithin) {
+                CreatedWithin.ANY_TIME -> null
+                CreatedWithin.LAST_DAY -> "24h"
+                CreatedWithin.LAST_WEEK -> "7d"
+                CreatedWithin.LAST_MONTH -> "1m"
+                CreatedWithin.CUSTOM -> calendarRangeLabel ?: "custom"
+            }
+        return listOfNotNull("Filter", state, time).joinToString(" \u00b7 ")
+    }
 }
 
 /** [this] as an instant, or null when it is empty or not a timestamp at all. */

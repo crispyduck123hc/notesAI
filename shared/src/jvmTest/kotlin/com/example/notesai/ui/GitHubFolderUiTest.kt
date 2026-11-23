@@ -222,10 +222,12 @@ class GitHubFolderUiTest {
                     "both states are shown to begin with",
                 )
 
-                // The chips carry the counts, so the filter is legible before it is used.
+                // The menu carries the counts, so the filter is legible before it is used.
+                openFilterMenu()
                 onNodeWithText("Open 1", substring = true).assertExists()
                 onNodeWithText("Closed 1", substring = true).assertExists()
 
+                // The state toggles keep the menu open, so both clicks land in one opening.
                 onNodeWithText("Closed 1", substring = true).performClick()
 
                 waitUntil(timeoutMillis = 5_000) {
@@ -259,9 +261,7 @@ class GitHubFolderUiTest {
                     onAllNodesWithText("octocat/notes").fetchSemanticsNodes().isNotEmpty()
                 }
                 onNode(hasTestTag(TREE_ROW_TAG) and hasText("octocat/notes")).performClick()
-                waitUntil(timeoutMillis = 5_000) {
-                    onAllNodesWithText("Open 1", substring = true).fetchSemanticsNodes().isNotEmpty()
-                }
+                openFilterMenu()
 
                 onNodeWithText("Open 1", substring = true).performClick()
                 onNodeWithText("Closed 0", substring = true).performClick()
@@ -270,7 +270,8 @@ class GitHubFolderUiTest {
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#1 an issue").fetchSemanticsNodes().isEmpty()
                 }
-                // The counts still say what exists, which is what stops this looking like data loss.
+                // The counts still say what exists, which is what stops this looking like data loss —
+                // and the menu is still open, because the state toggles keep it open by design.
                 onNodeWithText("Open 1", substring = true).assertExists()
             } finally {
                 fixture.close()
@@ -316,6 +317,7 @@ class GitHubFolderUiTest {
                     "no date filter yet, so both are shown",
                 )
 
+                openFilterMenu()
                 onNodeWithText("Opened 24h", substring = true).performClick()
 
                 waitUntil(timeoutMillis = 5_000) {
@@ -327,6 +329,7 @@ class GitHubFolderUiTest {
                 )
 
                 // And back to any time restores it.
+                openFilterMenu()
                 onNodeWithText("Opened Any", substring = true).performClick()
                 waitUntil(timeoutMillis = 5_000) {
                     onAllNodesWithText("#$old opened long ago").fetchSemanticsNodes().isNotEmpty()
@@ -365,6 +368,7 @@ class GitHubFolderUiTest {
                     onAllNodesWithText("#$inside inside the range").fetchSemanticsNodes().isNotEmpty()
                 }
 
+                openFilterMenu()
                 onNodeWithText("Custom", substring = true).performClick()
                 onNodeWithText("10 $monthName", substring = true).performClick()
                 onNodeWithText("20 $monthName", substring = true).performClick()
@@ -383,4 +387,12 @@ class GitHubFolderUiTest {
                 fixture.close()
             }
         }
+
+    /** The filter controls live in a dropdown menu now; every test that adjusts them opens it first. */
+    private fun androidx.compose.ui.test.ComposeUiTest.openFilterMenu() {
+        onNodeWithText("Filter", substring = true).performClick()
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithText("Opened Any").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 }
