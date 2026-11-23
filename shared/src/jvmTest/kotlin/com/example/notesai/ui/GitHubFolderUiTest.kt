@@ -14,6 +14,16 @@ import com.example.notesai.ui.tree.TREE_ROW_TAG
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
+
+/** English month names, matching the picker's day-cell text ("Thursday, 12 November 2026"). */
+private val MONTH_NAMES =
+    listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    )
 
 /**
  * Phase 4 in the window: a linked repository shows up, its issues are pullable, editable and
@@ -327,12 +337,23 @@ class GitHubFolderUiTest {
         }
 
     @Test
-    fun theCustomChipOpensTheDateDialogAndFiltersByTheRange() =
+    fun theCustomChipOpensTheCalendarAndFiltersByTheRange() =
         runComposeUiTest {
             val fixture = ScreenFixture()
             try {
-                val inside = fixture.server.addIssue(title = "inside the range", createdAt = "2026-03-10T09:00:00Z")
-                val outside = fixture.server.addIssue(title = "outside the range", createdAt = "2026-04-02T09:00:00Z")
+                // The grid opens on the current month, so the range is chosen inside it: day 10 to
+                // day 20. Day numbers 10 and 20 are substrings of no other cell, which is why they
+                // are the taps — a substring match on a single-digit day would also hit its teens.
+                val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                val monthName = "${MONTH_NAMES[today.monthNumber - 1]} ${today.year}"
+                val rangeStart = "%04d-%02d-10".format(today.year, today.monthNumber)
+                val inside =
+                    fixture.server.addIssue(
+                        title = "inside the range",
+                        createdAt = "%04d-%02d-15T09:00:00Z".format(today.year, today.monthNumber),
+                    )
+                val outside =
+                    fixture.server.addIssue(title = "outside the range", createdAt = "2099-01-02T09:00:00Z")
                 fixture.linkedRepo(owner = "octocat", name = "notes")
 
                 setContent { fixture.Screen() }
@@ -345,10 +366,8 @@ class GitHubFolderUiTest {
                 }
 
                 onNodeWithText("Custom", substring = true).performClick()
-                // The custom chip now opens the calendar; typing the exact dates is the fallback path.
-                onNodeWithText("Type dates…").performClick()
-                onAllNodes(hasSetTextAction())[0].performTextInput("2026-03-01")
-                onAllNodes(hasSetTextAction())[1].performTextInput("2026-03-31")
+                onNodeWithText("10 $monthName", substring = true).performClick()
+                onNodeWithText("20 $monthName", substring = true).performClick()
                 onNodeWithText("Apply").performClick()
 
                 waitUntil(timeoutMillis = 5_000) {
@@ -359,7 +378,7 @@ class GitHubFolderUiTest {
                     "the issue inside the range stays",
                 )
                 // The chip now says which range it stands for, rather than a generic "Custom".
-                onNodeWithText("2026-03-01", substring = true).assertExists()
+                onNodeWithText(rangeStart, substring = true).assertExists()
             } finally {
                 fixture.close()
             }

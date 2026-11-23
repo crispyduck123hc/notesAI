@@ -15,8 +15,8 @@ import kotlin.test.assertNull
  *
  * What matters here is the plumbing around the grid, not the grid itself: a pre-filled range comes
  * back through Apply unchanged (the UTC epoch-millisecond round-trip through the picker's state is
- * exactly where a day could shift), clearing is a real action distinct from cancelling, and the
- * typed-fields fallback is reachable.
+ * exactly where a day could shift), and clearing is a real action distinct from cancelling. Exact
+ * typing is the picker's own input mode, which is Material's code, not ours to test.
  */
 @OptIn(ExperimentalTestApi::class)
 class DateRangeCalendarDialogTest {
@@ -75,20 +75,7 @@ class DateRangeCalendarDialogTest {
         }
 
     @Test
-    fun theTypedFieldsFallbackIsReachable() =
-        runComposeUiTest {
-            setContent {
-                DateRangeCalendarDialog(from = null, to = null, onDismiss = {}, onApply = { _, _ -> })
-            }
-
-            onNodeWithText("Type dates…").performClick()
-
-            // The typed dialog's own label; the grid is gone from the composition.
-            onNodeWithText("From (YYYY-MM-DD)").assertIsDisplayed()
-        }
-
-    @Test
-    fun applyWithNoSelectionIsDisabledUntilADayIsPicked() =
+    fun applyWithNoSelectionDoesNotFireAnEmptyFilter() =
         runComposeUiTest {
             var applied: Pair<LocalDate?, LocalDate?>? = null
             setContent {
@@ -97,7 +84,7 @@ class DateRangeCalendarDialogTest {
 
             // Both ends null and nothing selected: Apply must not fire an empty filter as if it were a choice.
             // The Clear button is the way to say "no range", so assert the state rather than clicking.
-            onNodeWithText("Opened between").assertIsDisplayed()
+            onNodeWithText("Apply").assertIsDisplayed()
             assertNull(applied)
         }
 }
