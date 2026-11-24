@@ -86,6 +86,15 @@ private const val PERIODIC_SYNC_MILLIS = 60_000L
  */
 private const val REQUEST_TIMEOUT_MILLIS = 10_000L
 
+// AI generations run far longer than a Drive call: a stream that thinks for half a minute is
+// normal, so the AI transport carries its own timeouts instead of the shared 10-second one.
+// The request timeout covers the whole stream; the socket timeout is the anti-hang guard that
+// fires when the model stops sending — and a *thinking* model stops sending for minutes at a
+// time, first before the initial token and again between chunks, so the idle tolerance has to
+// be generous. The overall bound is the request timeout, not this.
+private const val AI_REQUEST_TIMEOUT_MILLIS = 5L * 60_000L
+private const val AI_SOCKET_TIMEOUT_MILLIS = 2L * 60_000L
+
 private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
 
@@ -292,10 +301,21 @@ private fun AccountNotes(
     val drive = remember(http, accessToken) { DriveClient(http, accessToken) }
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
 
-    // The AI transport rides the account's own AI grant. The quota-project setting does not exist
-    // yet: whether Google requires the header is what the spike and the first live call settle,
-    // and an unused setting is worse than a missing one.
-    val gemini = remember(http, aiAccessToken) { GeminiClient(http = http, aiAccessToken = aiAccessToken) }
+    // The AI transport rides the account's own AI grant, on its own timeouts: a stream is not a
+    // 10-second Drive call. The quota-project setting does not exist yet: whether Google requires
+    // the header is what the spike and the first live call settle, and an unused setting is worse
+    // than a missing one.
+    val aiHttp =
+        remember {
+            HttpClient {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = AI_REQUEST_TIMEOUT_MILLIS
+                    socketTimeoutMillis = AI_SOCKET_TIMEOUT_MILLIS
+                    connectTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+                }
+            }
+        }
+    val gemini = remember(aiHttp, aiAccessToken) { GeminiClient(http = aiHttp, aiAccessToken = aiAccessToken) }
     val scope = rememberCoroutineScope()
 
     // One value for the sidebar, so it cannot say "syncing" and show an error at the same time.

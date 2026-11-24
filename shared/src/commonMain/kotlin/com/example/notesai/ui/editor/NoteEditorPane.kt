@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -124,20 +126,43 @@ internal fun NoteEditorPane(
     val paneScope = rememberCoroutineScope()
     var aiJob by remember { mutableStateOf<Job?>(null) }
     var showAiPrompt by remember { mutableStateOf(false) }
+    var aiMenuExpanded by remember { mutableStateOf(false) }
 
-    fun startAi(request: String) {
+    /** [replaceFirstLine] is the catalog's title action: the first line *is* the local note's title. */
+    fun startAi(
+        prompt: String,
+        replaceFirstLine: Boolean = false,
+    ) {
         val stream = streamAi ?: return
-        val insertAt = state.selection.start.coerceIn(0, state.text.length)
-        var offset = insertAt
+        var offset =
+            if (replaceFirstLine) {
+                0
+            } else {
+                state.selection.start.coerceIn(0, state.text.length)
+            }
+        // The range the first chunk replaces: everything up to (and excluding) the note's first
+        // line break. For an empty note that is an empty range, so insertion is the natural case.
+        val firstLineEnd =
+            if (replaceFirstLine) {
+                state.text.indexOf('\n').let { if (it == -1) state.text.length else it }
+            } else {
+                -1
+            }
+        var replacing = replaceFirstLine
         aiJob =
             paneScope.launch {
                 try {
-                    stream(askAiPrompt(noteText = state.text.toString(), request = request)).collect { chunk ->
+                    stream(prompt).collect { chunk ->
                         state.edit {
-                            replace(offset, offset, chunk)
-                            selection = TextRange(offset + chunk.length)
+                            if (replacing) {
+                                replace(offset, firstLineEnd, chunk)
+                                replacing = false
+                            } else {
+                                replace(offset, offset, chunk)
+                            }
+                            offset += chunk.length
+                            selection = TextRange(offset)
                         }
-                        offset += chunk.length
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -243,7 +268,7 @@ internal fun NoteEditorPane(
             onDismiss = { showAiPrompt = false },
             onConfirm = { request ->
                 showAiPrompt = false
-                startAi(request)
+                startAi(askAiPrompt(noteText = state.text.toString(), request = request))
             },
         )
     }
@@ -331,22 +356,46 @@ internal fun NoteEditorPane(
             if (onLinkNote != null) {
                 TextButton(onClick = onLinkNote) { Text("\u21aa Link note") }
             }
-            // The note's text and the user's request are what leave the device, only when the
-            // user asks — that is the feature's whole privacy statement, stated in [askAiPrompt].
-            // While it streams, the button is the Stop: the stream writes into the field, so the
-            // user must not be writing into the stream.
+            // The note's text and the request are what leave the device, only when the user asks —
+            // that is the feature's whole privacy statement, stated in the prompt builders. While
+            // it streams, the button is the Stop: the stream writes into the field, so the user
+            // must not be writing into the stream.
             if (streamAi != null) {
-                TextButton(
-                    onClick = {
-                        val running = aiJob
-                        if (running != null) {
-                            running.cancel()
-                        } else {
-                            showAiPrompt = true
+                Box {
+                    TextButton(
+                        onClick = {
+                            val running = aiJob
+                            if (running != null) {
+                                running.cancel()
+                            } else {
+                                aiMenuExpanded = true
+                            }
+                        },
+                    ) {
+                        Text(if (aiJob != null) "\u25a0 Stop AI" else "Ask AI\u2026")
+                    }
+                    DropdownMenu(expanded = aiMenuExpanded, onDismissRequest = { aiMenuExpanded = false }) {
+                        AiAction.entries.forEach { action ->
+                            DropdownMenuItem(
+                                text = { Text(action.label) },
+                                onClick = {
+                                    aiMenuExpanded = false
+                                    startAi(
+                                        aiActionPrompt(action, state.text.toString()),
+                                        replaceFirstLine = action == AiAction.TITLE,
+                                    )
+                                },
+                            )
                         }
-                    },
-                ) {
-                    Text(if (aiJob != null) "\u25a0 Stop AI" else "Ask AI\u2026")
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Ask anything\u2026") },
+                            onClick = {
+                                aiMenuExpanded = false
+                                showAiPrompt = true
+                            },
+                        )
+                    }
                 }
             }
         }

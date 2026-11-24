@@ -28,4 +28,23 @@ class AiPromptTest {
 
         assertTrue(prompt.contains("only the text"), "the reply goes straight into the note at the caret")
     }
+
+    @Test
+    fun everyCatalogActionCarriesTheNoteAndTheInsertableRule() {
+        AiAction.entries.forEach { action ->
+            val prompt = aiActionPrompt(action, noteText = "the note")
+
+            assertTrue(prompt.contains("the note"), "$action keeps the note as the only context")
+            assertTrue(prompt.contains("only the text"), "$action asks for insertable text")
+        }
+    }
+
+    @Test
+    fun eachActionAsksForItsOwnShape() {
+        assertTrue(aiActionPrompt(AiAction.SUMMARIZE, "note").contains("Summarize"))
+        assertTrue(aiActionPrompt(AiAction.CHECKLIST, "note").contains("[ ] "))
+        assertTrue(aiActionPrompt(AiAction.ACTIONS, "note").contains("action items"))
+        val title = aiActionPrompt(AiAction.TITLE, "note")
+        assertTrue(title.contains("title") && title.contains("no quotes"))
+    }
 }

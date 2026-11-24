@@ -1,6 +1,8 @@
 package com.example.notesai.ai
 
 import io.ktor.client.HttpClient
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -14,10 +16,12 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.encodeToString
+import kotlin.random.Random
 
 /** The base URL, overridable so tests can point the client at a stand-in server. */
 const val DEFAULT_AI_BASE_URL = "https://generativelanguage.googleapis.com"
@@ -29,6 +33,9 @@ const val DEFAULT_AI_BASE_URL = "https://generativelanguage.googleapis.com"
  */
 enum class AiErrorKind {
     QUOTA,
+
+    /** 503 UNAVAILABLE: Google's serving capacity for the model is saturated. Transient by design. */
+    UNAVAILABLE,
     ACCESS,
     REQUEST,
     OTHER,
@@ -38,7 +45,8 @@ enum class AiErrorKind {
 class AiException(
     message: String,
     val kind: AiErrorKind,
-) : Exception(message)
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /**
  * Thin Gemini REST client, scoped to what this app does: one prompt in, text out — streamed or
@@ -65,20 +73,21 @@ class GeminiClient(
 
     private fun streamUrl(model: String) = streamUrlFormat.format(model)
 
-    /** One prompt, one whole answer. */
+    /** One prompt, one whole answer. Transient failures (503, 429) are retried with backoff. */
     suspend fun generate(
         prompt: String,
         model: String = DEFAULT_AI_MODEL,
-    ): String {
-        val response = postModel(generateUrl(model), prompt)
-        val text =
-            if (response.status.isSuccess()) {
-                geminiJson.decodeFromString<GeminiGenerateResponse>(response.bodyAsText()).singleText()
-            } else {
-                throw response.aiException()
-            }
-        return text ?: throw AiException("The model replied with no text.", AiErrorKind.OTHER)
-    }
+    ): String =
+        withRetries {
+            val response = postModel(generateUrl(model), prompt)
+            val text =
+                if (response.status.isSuccess()) {
+                    geminiJson.decodeFromString<GeminiGenerateResponse>(response.bodyAsText()).singleText()
+                } else {
+                    throw response.aiException()
+                }
+            text ?: throw AiException("The model replied with no text.", AiErrorKind.OTHER)
+        }
 
     /**
      * One prompt, an answer that arrives in pieces: a [Flow] of text fragments in order.
@@ -92,12 +101,37 @@ class GeminiClient(
         model: String = DEFAULT_AI_MODEL,
     ): Flow<String> =
         flow {
-            val response = postModel(streamUrl(model), prompt) { parameter("alt", "sse") }
-            if (!response.status.isSuccess()) throw response.aiException()
-            val channel = response.bodyAsChannel()
-            while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
-                emitChunk(line)
+            // A refused-before-first-byte stream is retryable like a whole answer; once text has
+            // reached the note, retrying would duplicate it, so mid-stream failures are final.
+            var attempt = 0
+            while (true) {
+                var emitted = false
+                try {
+                    val response = postModel(streamUrl(model), prompt) { parameter("alt", "sse") }
+                    if (!response.status.isSuccess()) throw response.aiException()
+                    val channel = response.bodyAsChannel()
+                    // A thinking model goes silent for minutes between chunks; the socket timeout
+                    // that guards that silence is deliberately generous, and when it does fire the
+                    // message says what happened instead of naming a URL.
+                    try {
+                        while (!channel.isClosedForRead) {
+                            val line = channel.readUTF8Line() ?: break
+                            emitChunk(line)
+                            emitted = true
+                        }
+                        break
+                    } catch (timeout: SocketTimeoutException) {
+                        throw AiException(
+                            "The model stopped responding mid-answer. What arrived is kept — try again for the rest.",
+                            AiErrorKind.OTHER,
+                            cause = timeout,
+                        )
+                    }
+                } catch (e: AiException) {
+                    if (emitted || !e.isRetryable() || attempt >= RETRY_ATTEMPTS - 1) throw e
+                    attempt++
+                    delay(RETRY_BACKOFF_BASE_MILLIS * (1L shl attempt) + Random.nextLong(RETRY_JITTER_MILLIS))
+                }
             }
         }
 
@@ -122,31 +156,71 @@ class GeminiClient(
         if (text.isNotEmpty()) emit(text)
     }
 
+    // The grant check is its own function so postModel stays within detekt's ThrowsCount: the
+    // not-enabled case is a precondition, the timeout mappings are failure translations.
+    private suspend fun aiToken(): String = aiAccessToken() ?: throw AiException("AI is not enabled yet.", AiErrorKind.ACCESS)
+
+    /**
+     * Google's documented mitigation for 503 UNAVAILABLE and 429 RESOURCE_EXHAUSTED is retry
+     * with exponential backoff and jitter; this is that policy, small enough to stay inside the
+     * reader's patience. The backoff doubles per attempt and is capped by the attempt count.
+     */
+    private suspend fun <T> withRetries(block: suspend () -> T): T {
+        var attempt = 0
+        while (true) {
+            try {
+                return block()
+            } catch (e: AiException) {
+                if (!e.isRetryable() || attempt >= RETRY_ATTEMPTS - 1) throw e
+                attempt++
+                delay(RETRY_BACKOFF_BASE_MILLIS * (1L shl attempt) + Random.nextLong(RETRY_JITTER_MILLIS))
+            }
+        }
+    }
+
     private suspend fun postModel(
         url: String,
         prompt: String,
         configure: HttpRequestBuilder.() -> Unit = {},
     ): HttpResponse {
-        val token =
-            aiAccessToken()
-                ?: throw AiException("AI is not enabled yet.", AiErrorKind.ACCESS)
+        val token = aiToken()
         val project = quotaProject()
         val request = GeminiGenerateRequest(contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = prompt)))))
-        return http.post(url) {
-            header(HttpHeaders.Authorization, "Bearer $token")
-            if (!project.isNullOrBlank()) header(QUOTA_PROJECT_HEADER, project)
-            contentType(ContentType.Application.Json)
-            setBody(geminiJson.encodeToString(request))
-            configure()
+        return try {
+            http.post(url) {
+                header(HttpHeaders.Authorization, "Bearer $token")
+                if (!project.isNullOrBlank()) header(QUOTA_PROJECT_HEADER, project)
+                contentType(ContentType.Application.Json)
+                setBody(geminiJson.encodeToString(request))
+                configure()
+            }
+        } catch (timeout: HttpRequestTimeoutException) {
+            throw timeoutFailure(timeout, "The AI did not answer in time.")
+        } catch (timeout: SocketTimeoutException) {
+            throw timeoutFailure(timeout, "The model stopped responding before replying.")
         }
     }
 }
+
+// A timeout failure: the ktor message is a URL plus a millisecond count, and the reader needs
+// the advice instead. The original is chained, so the detail is not lost for a bug report.
+private fun timeoutFailure(
+    timeout: Throwable,
+    advice: String,
+): AiException = AiException(advice + " Try a shorter request, or a lighter model.", AiErrorKind.OTHER, cause = timeout)
 
 private const val SSE_DATA_PREFIX = "data:"
 private const val SSE_DONE = "[DONE]"
 private const val QUOTA_PROJECT_HEADER = "x-goog-user-project"
 
 private suspend fun HttpResponse.aiException(): AiException = aiFailureFor(status.value, bodyAsText())
+
+/** Transient Google-side conditions only: serving capacity (503) and rate limits (429). */
+private fun AiException.isRetryable(): Boolean = kind == AiErrorKind.UNAVAILABLE || kind == AiErrorKind.QUOTA
+
+private const val RETRY_ATTEMPTS = 3
+private const val RETRY_BACKOFF_BASE_MILLIS = 1_000L
+private const val RETRY_JITTER_MILLIS = 500L
 
 /**
  * Turns a Gemini failure into an [AiException] whose kind is what the reader can *do* and whose
@@ -168,6 +242,14 @@ internal fun aiFailureFor(
                 "The Gemini free-tier quota for this project is used up. Try again later, or " +
                     "switch the model to one with remaining quota.",
                 AiErrorKind.QUOTA,
+            )
+        "UNAVAILABLE" ->
+            // Google's own words are the accurate part; the app adds what it already did about it.
+            AiException(
+                "The model is busy right now — Google's serving capacity for it is saturated. " +
+                    "The app retried with backoff and was still refused; try again in a minute, or " +
+                    "switch to a lighter model. (Google: $explanation)",
+                AiErrorKind.UNAVAILABLE,
             )
         "PERMISSION_DENIED" ->
             AiException(

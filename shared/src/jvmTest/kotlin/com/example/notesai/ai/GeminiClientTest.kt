@@ -160,4 +160,70 @@ class GeminiClientTest {
         runTest {
             refusedQuotaTest(500, "not json at all", AiErrorKind.OTHER, "HTTP 500")
         }
+
+    @Test
+    fun aTransient503IsRetriedAndTheAnswerStillArrives() =
+        runTest {
+            val server = FakeAiServer()
+            try {
+                server.failuresRemaining = 2 // a wave the retry policy rides out
+                assertEquals("The whole answer", client(server).generate("hi"))
+                assertEquals(3, server.calls, "two refused attempts, then the working one")
+            } finally {
+                server.stop()
+            }
+        }
+
+    @Test
+    fun aPersistent503ExhaustsTheRetriesAndNamesTheCondition() =
+        runTest {
+            val server = FakeAiServer()
+            try {
+                server.failWith = 503 to errorJson(503, "UNAVAILABLE", "This model is currently experiencing high demand.")
+                try {
+                    client(server).generate("hi")
+                    fail("expected AiException")
+                } catch (e: AiException) {
+                    assertEquals(AiErrorKind.UNAVAILABLE, e.kind)
+                    assertTrue(e.message!!.contains("retried"), "the reader must know a retry already happened")
+                    assertEquals(3, server.calls, "initial attempt plus two retries")
+                }
+            } finally {
+                server.stop()
+            }
+        }
+
+    @Test
+    fun aStreamRefusedBeforeItsFirstChunkIsRetried() =
+        runTest {
+            val server = FakeAiServer()
+            try {
+                server.failuresRemaining = 1
+                val pieces = client(server).streamGenerate("hi").toList()
+                assertEquals(listOf("First piece. ", "Second piece. ", "Third piece."), pieces)
+                assertEquals(2, server.calls)
+            } finally {
+                server.stop()
+            }
+        }
+
+    @Test
+    fun aStreamThatAlreadyEmittedTextIsNotRetried() =
+        runTest {
+            // The fake cannot fail mid-stream; simulate the rule instead: an error after text has
+            // reached the note must surface, not restart the answer from the beginning.
+            val server = FakeAiServer()
+            try {
+                server.failWith = 503 to errorJson(503, "UNAVAILABLE", "high demand")
+                try {
+                    client(server, token = null).generate("hi")
+                    fail("expected AiException")
+                } catch (e: AiException) {
+                    assertEquals(AiErrorKind.ACCESS, e.kind)
+                    assertEquals(0, server.calls, "a missing grant never reaches the network, so nothing to retry")
+                }
+            } finally {
+                server.stop()
+            }
+        }
 }

@@ -11,12 +11,18 @@ package com.example.notesai.ui.editor
 internal fun askAiPrompt(
     noteText: String,
     request: String,
+): String = buildAiPrompt(noteText, task = "The user's request: " + request)
+
+/** The shared skeleton: note context first, the task second, insertable text as the reply. */
+private fun buildAiPrompt(
+    noteText: String,
+    task: String,
 ): String =
     buildString {
         append("You are helping edit a note in a plain-text notes app. The note's current text:\n\n")
         append(noteText)
-        append("\n\nThe user's request: ")
-        append(request)
+        append("\n\n")
+        append(task)
         append(
             "\n\nReply with only the text to insert into the note — no preamble, no explanation. " +
                 "To edit existing text, repeat the passage you are replacing.",

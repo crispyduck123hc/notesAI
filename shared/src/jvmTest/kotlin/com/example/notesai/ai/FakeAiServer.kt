@@ -31,6 +31,13 @@ class FakeAiServer {
     /** When set, every call fails with this status and body. */
     var failWith: Pair<Int, String>? = null
 
+    /** The first [failuresRemaining] calls fail (a 503 wave), then normal replies resume. */
+    var failuresRemaining = 0
+
+    /** How many requests have arrived — the retry policy's witness. */
+    var calls = 0
+        private set
+
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
 
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
@@ -43,7 +50,13 @@ class FakeAiServer {
     fun stop() = server.stop(0)
 
     private fun handle(exchange: HttpExchange) {
+        calls++
         val body = exchange.requestBody.readBytes().decodeToString()
+        if (failuresRemaining > 0) {
+            failuresRemaining--
+            respond(exchange, 503, errorJson(503, "UNAVAILABLE", "This model is currently experiencing high demand."))
+            return
+        }
         lastAuthorization = exchange.requestHeaders.getFirst("Authorization")
         lastQuotaProject = exchange.requestHeaders.getFirst("x-goog-user-project")
         lastPrompt = Regex("\"text\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(body)?.groupValues?.get(1)
