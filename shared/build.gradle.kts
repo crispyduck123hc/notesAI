@@ -208,6 +208,18 @@ kotlin {
     }
 }
 
+// ---- AI scope spike (Phase 0) ----------------------------------------------
+// Validates `https://www.googleapis.com/auth/generative-language` against the live Gemini
+// API: two browser consents, one generateContent call per scope, and a printed verdict.
+// See spike/AiScopeSpike.kt for exactly what it does and what it needs.
+val jvmMainCompilation = kotlin.jvm().compilations.getByName("main")
+tasks.register<JavaExec>("runAiScopeSpike") {
+    group = "spike"
+    description = "Checks the generative-language OAuth scope against the live Gemini API. A human consents in the browser."
+    mainClass.set("com.example.notesai.spike.AiScopeSpikeKt")
+    classpath = jvmMainCompilation.runtimeDependencyFiles
+}
+
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
 }

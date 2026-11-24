@@ -7,15 +7,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import kotlinx.datetime.Instant
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 /**
  * Asks for a calendar range on a month grid: issues opened between two days, either end optional.
@@ -83,5 +79,4 @@ private fun LocalDate.startOfDayMillis(): Long = atStartOfDayIn(TimeZone.UTC).to
  * A UTC epoch millisecond from the picker, read back as the calendar day it stands for — in UTC,
  * because that is the zone the picker's own day arithmetic runs in (see [DateRangeCalendarDialog]).
  */
-private fun Long?.toLocalDate(): LocalDate? =
-    this?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
+private fun Long?.toLocalDate(): LocalDate? = this?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
