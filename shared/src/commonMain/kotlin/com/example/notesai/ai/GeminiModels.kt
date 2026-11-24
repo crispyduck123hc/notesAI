@@ -13,11 +13,13 @@ internal val geminiJson =
 /**
  * The model generation requests run against by default. One constant, one setting later.
  *
- * Models retire: `gemini-2.5-flash` stopped serving new users (a 404 whose message names the
- * successor), so this follows Google's free-tier list — currently `gemini-3.8-flash` — and is
- * the one line to change when it moves again.
+ * Models retire and saturate: `gemini-2.5-flash` stopped serving new users (404), and
+ * `gemini-3.8-flash` — the successor its error named — has been returning 503 waves on the free
+ * tier (verified live against this account, while the lite variants answered). This currently
+ * points at the lightest free-tier model that answered, and is the one line to change when the
+ * free-tier picture moves again.
  */
-const val DEFAULT_AI_MODEL = "gemini-3.8-flash"
+const val DEFAULT_AI_MODEL = "gemini-3.5-flash-lite"
 
 @Serializable
 internal data class GeminiGenerateRequest(

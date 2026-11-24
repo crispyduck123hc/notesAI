@@ -40,9 +40,9 @@ private val CANDIDATE_SCOPES =
     )
 
 private const val GENERATE_CONTENT_URL =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
 
-private const val MODEL_NAME = "gemini-3.8-flash"
+private const val MODEL_NAME = "gemini-3.5-flash-lite"
 
 /**
  * Phase 0 spike: does `https://www.googleapis.com/auth/generative-language` authorize
@@ -50,7 +50,7 @@ private const val MODEL_NAME = "gemini-3.8-flash"
  *
  * What it does, per candidate scope: runs the same authorization-code + PKCE flow the app's
  * sign-in uses (loopback redirect, browser), exchanges the code, and calls
- * `gemini-3.8-flash:generateContent` with a trivial prompt. It prints the exact status and body
+ * `gemini-3.5-flash-lite:generateContent` with a trivial prompt. It prints the exact status and body
  * for each attempt, then a one-line verdict.
  *
  * The first candidate is the narrow scope the plan recommends; the second is `cloud-platform`,
