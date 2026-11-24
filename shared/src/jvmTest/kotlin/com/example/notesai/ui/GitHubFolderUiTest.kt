@@ -11,18 +11,28 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.notesai.ui.tree.TREE_ROW_TAG
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Clock
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 /** English month names, matching the picker's day-cell text ("Thursday, 12 November 2026"). */
 private val MONTH_NAMES =
     listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     )
 
 /**
@@ -347,7 +357,12 @@ class GitHubFolderUiTest {
                 // The grid opens on the current month, so the range is chosen inside it: day 10 to
                 // day 20. Day numbers 10 and 20 are substrings of no other cell, which is why they
                 // are the taps — a substring match on a single-digit day would also hit its teens.
-                val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                val today =
+                    Clock
+                        .System
+                        .now()
+                        .toLocalDateTime(TimeZone.currentSystemDefault())
+                        .date
                 val monthName = "${MONTH_NAMES[today.monthNumber - 1]} ${today.year}"
                 val rangeStart = "%04d-%02d-10".format(today.year, today.monthNumber)
                 val inside =

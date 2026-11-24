@@ -149,8 +149,7 @@ data class IssueFilter(
         )
 
     /** Whether anything is actually filtering — a default filter is just "everything", which deserves no words. */
-    fun isFiltering(): Boolean =
-        !showOpen || !showClosed || createdWithin != CreatedWithin.ANY_TIME
+    fun isFiltering(): Boolean = !showOpen || !showClosed || createdWithin != CreatedWithin.ANY_TIME
 
     /** What the filter chip reads: "Filter" when everything is on and any time, or a summary of what is off. */
     fun summary(): String {

@@ -40,11 +40,19 @@ private fun canonicalScope(scope: String): String = scopeAliases[scope] ?: scope
  * Drives the Google OAuth 2.0 authorization-code + PKCE flow and owns the resulting
  * tokens. Nothing here is platform specific except [authorizeInteractively], which
  * opens a browser and captures the redirect.
+ *
+ * The manager owns two Google grants — the Drive sign-in and the on-demand AI consent — and
+ * each grant needs its check, its accessor and its refresh. Splitting them into two classes
+ * would duplicate the token-exchange logic, which is the riskier half of the two options
+ * (detekt: TooManyFunctions, and why this class is allowed more functions than usual).
  */
+@Suppress("TooManyFunctions")
 class GoogleAuthManager(
     private val config: GoogleOAuthConfig,
     private val store: TokenStore,
     private val http: HttpClient = HttpClient(),
+    /** The slot for the AI grant. Null in builds that do not offer AI at all. */
+    private val aiStore: TokenStore? = null,
 ) {
     /** The signed-in account from persisted tokens, or null if not signed in. */
     fun restore(): AccountInfo? = store.load()?.toAccountInfo()
@@ -70,7 +78,111 @@ class GoogleAuthManager(
         return !granted.containsAll(requiredScopes.map(::canonicalScope))
     }
 
-    suspend fun signIn(): AccountInfo {
+    /**
+     * Whether the AI grant is missing. Checked **lazily** — when the user reaches for AI in
+     * settings — never at sign-in, so the base grant stays minimal and untouched for everyone.
+     */
+    fun needsAiAuthorization(): Boolean {
+        val store = aiStore ?: return true
+        val granted =
+            store
+                .load()
+                ?.scope
+                ?.split(' ')
+                ?.filter { it.isNotBlank() }
+                .orEmpty()
+                .toSet()
+        return AI_SCOPE !in granted
+    }
+
+    suspend fun signIn(): AccountInfo = grant(store, config.scopes)
+
+    /**
+     * Runs the consent for the AI scope as **its own grant**, stored in its own slot — an
+     * incremental authorization in effect: the Drive sign-in keeps working untouched, a user who
+     * cancels here loses nothing, and the AI grant can expire or be revoked without disturbing
+     * sync. The AI slot's tokens carry only the AI scope; nothing else reads them.
+     */
+    suspend fun enableAi(): AccountInfo {
+        val store = aiStore ?: throw AuthException("AI is not available in this build.")
+        return grant(store, listOf(AI_SCOPE))
+    }
+
+    fun signOut() {
+        store.clear()
+        // The AI grant is account-scoped like everything else, so it must not outlive the account.
+        signOutAi()
+    }
+
+    fun signOutAi() {
+        aiStore?.clear()
+    }
+
+    /**
+     * A currently-valid access token, refreshing first if it is expired (or close to).
+     * Returns null if the user is not signed in, or the refresh token is gone and a
+     * fresh interactive sign-in is required.
+     */
+    suspend fun accessToken(): String? = slotAccessToken(store, "so syncing has stopped")
+
+    /**
+     * A currently-valid access token for the AI grant, refreshing first if needed. Null when AI
+     * was never enabled, or the refresh token is gone and the consent flow must run again.
+     */
+    suspend fun aiAccessToken(): String? = slotAccessToken(aiStore ?: return null, "so AI features are unavailable")
+
+    // Four exits, each a different state the caller must see: no grant, a live token, no refresh
+    // token, or a refreshed one. Flattening them into one return would blur exactly the cases the
+    // caller reacts to. (detekt: ReturnCount)
+    @Suppress("ReturnCount")
+    private suspend fun slotAccessToken(
+        store: TokenStore,
+        consequence: String,
+    ): String? {
+        val tokens = store.load() ?: return null
+        if (tokens.expiresAtMillis - EXPIRY_SKEW_MILLIS > nowMillis()) return tokens.accessToken
+
+        val refreshToken = tokens.refreshToken ?: return null
+        val response =
+            try {
+                requestToken(
+                    "client_id" to config.clientId,
+                    "refresh_token" to refreshToken,
+                    "grant_type" to "refresh_token",
+                    *clientSecretParam(),
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (t: Throwable) {
+                // The refresh token is the long-lived credential, so a rejection here is not a
+                // passing glitch — access was revoked, or the token expired. An OAuth client whose
+                // consent screen is still in "Testing" mode expires refresh tokens after 7 days,
+                // which presents as "it worked last week and now it doesn't".
+                //
+                // Returning null instead would surface as "not signed in to Google Drive", which
+                // is both wrong (the app is still showing the account) and useless.
+                throw AuthException(
+                    "Google would not renew the sign-in, $consequence. Sign out and " +
+                        "sign in again. (${t.message ?: t})",
+                )
+            }
+
+        val refreshed =
+            tokens.copy(
+                accessToken = response.accessToken,
+                refreshToken = response.refreshToken ?: tokens.refreshToken,
+                expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
+                scope = response.scope ?: tokens.scope,
+            )
+        store.save(refreshed)
+        return refreshed.accessToken
+    }
+
+    /** The shared consent flow, pointed at whichever slot and scope set the caller asked for. */
+    private suspend fun grant(
+        store: TokenStore,
+        scopes: List<String>,
+    ): AccountInfo {
         if (config.clientId.isBlank()) {
             throw AuthException(
                 "Google OAuth client id is not configured. Add google.desktop.clientId " +
@@ -80,7 +192,7 @@ class GoogleAuthManager(
 
         val verifier = generateCodeVerifier()
         val state = generateState()
-        val authUrl = config.authorizationUrl(state = state, codeChallenge = codeChallengeS256(verifier))
+        val authUrl = config.copy(scopes = scopes).authorizationUrl(state = state, codeChallenge = codeChallengeS256(verifier))
 
         val code =
             authorizeInteractively(authUrl, config.redirectUri, expectedState = state)
@@ -106,55 +218,6 @@ class GoogleAuthManager(
             )
         store.save(tokens)
         return tokens.toAccountInfo()
-    }
-
-    fun signOut() {
-        store.clear()
-    }
-
-    /**
-     * A currently-valid access token, refreshing first if it is expired (or close to).
-     * Returns null if the user is not signed in, or the refresh token is gone and a
-     * fresh interactive sign-in is required.
-     */
-    suspend fun accessToken(): String? {
-        val tokens = store.load() ?: return null
-        if (tokens.expiresAtMillis - EXPIRY_SKEW_MILLIS > nowMillis()) return tokens.accessToken
-
-        val refreshToken = tokens.refreshToken ?: return null
-        val response =
-            try {
-                requestToken(
-                    "client_id" to config.clientId,
-                    "refresh_token" to refreshToken,
-                    "grant_type" to "refresh_token",
-                    *clientSecretParam(),
-                )
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (t: Throwable) {
-                // The refresh token is the long-lived credential, so a rejection here is not a
-                // passing glitch — access was revoked, or the token expired. An OAuth client whose
-                // consent screen is still in "Testing" mode expires refresh tokens after 7 days,
-                // which presents as "it worked last week and now it doesn't".
-                //
-                // Returning null instead would surface as "not signed in to Google Drive", which
-                // is both wrong (the app is still showing the account) and useless.
-                throw AuthException(
-                    "Google would not renew the sign-in, so syncing has stopped. Sign out and " +
-                        "sign in again. (${t.message ?: t})",
-                )
-            }
-
-        val refreshed =
-            tokens.copy(
-                accessToken = response.accessToken,
-                refreshToken = response.refreshToken ?: tokens.refreshToken,
-                expiresAtMillis = nowMillis() + response.expiresInSeconds * 1_000,
-                scope = response.scope ?: tokens.scope,
-            )
-        store.save(refreshed)
-        return refreshed.accessToken
     }
 
     private fun clientSecretParam(): Array<Pair<String, String>> = config.clientSecret?.let { arrayOf("client_secret" to it) } ?: emptyArray()

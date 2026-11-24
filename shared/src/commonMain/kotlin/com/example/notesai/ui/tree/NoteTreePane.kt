@@ -27,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +49,10 @@ internal fun NoteTreePane(
     accountEmail: String?,
     sync: SyncUiState,
     conflictCount: Int,
+    /** Whether the AI grant exists; the grant is made through [onEnableAi]. */
+    aiEnabled: Boolean,
+    aiBusy: Boolean,
+    onEnableAi: () -> Unit,
     /** Non-null when a newer release has been published than the one running. */
     availableUpdate: AvailableUpdate?,
     gitHub: GitHubPaneState,
@@ -229,6 +232,25 @@ internal fun NoteTreePane(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
+        // AI features ride a separate Google grant, consented on demand: a user who never
+        // touches AI never sees a wider consent screen at sign-in. The grant *is* the setting —
+        // there is no separate toggle to disagree with the consent screen.
+        if (aiEnabled) {
+            Text(
+                text = "AI: enabled",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            TextButton(
+                onClick = onEnableAi,
+                enabled = !aiBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (aiBusy) "Enabling AI\u2026" else "Enable AI\u2026")
+            }
+        }
         TextButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
             Text("Sign out")
         }

@@ -44,8 +44,8 @@ import androidx.compose.ui.unit.dp
 import com.example.notesai.PendingEdit
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
-import com.example.notesai.ui.theme.Dimens
 import com.example.notesai.ui.theme.DateRangeIcon
+import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce

@@ -102,6 +102,11 @@ fun App(
      * must not disturb the other.
      */
     gitHubTokenStore: TokenStore,
+    /**
+     * The AI grant lives in its own slot too: consented on demand from settings, refreshed on its
+     * own schedule, and never able to disturb the Drive sign-in.
+     */
+    aiTokenStore: TokenStore,
     // Desktop supplies a remembered instance, so its window-close handler can commit the open editor's unsaved
     // text. Mobile has no interceptable quit, so the default is never asked to commit anything there.
     pendingEdit: PendingEdit = remember { PendingEdit() },
@@ -120,8 +125,8 @@ fun App(
             }
         }
     val auth =
-        remember(http, tokenStore) {
-            GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http)
+        remember(http, tokenStore, aiTokenStore) {
+            GoogleAuthManager(config = defaultOAuthConfig(), store = tokenStore, http = http, aiStore = aiTokenStore)
         }
     val gitHubAuth =
         remember(http, gitHubTokenStore) {
@@ -201,6 +206,20 @@ fun App(
                         auth.signOut()
                         account = null
                     },
+                    aiNeedsAuthorization = { auth.needsAiAuthorization() },
+                    enableAi = {
+                        try {
+                            auth.enableAi()
+                            null
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (
+                            @Suppress("TooGenericExceptionCaught")
+                            t: Throwable,
+                        ) {
+                            "Could not enable AI: ${t.message ?: t}"
+                        }
+                    },
                 )
         }
     }
@@ -222,6 +241,10 @@ private fun AccountNotes(
     onConnectGitHub: suspend () -> Unit,
     signInWarning: String?,
     onSignOut: () -> Unit,
+    /** Whether the AI grant is missing right now — read lazily, never at sign-in. */
+    aiNeedsAuthorization: () -> Boolean,
+    /** Runs the AI consent. Returns an error message, or null when the grant was made. */
+    enableAi: suspend () -> String?,
 ) {
     val scopeName = remember(account) { accountDatabaseName(account.email) }
 
@@ -356,6 +379,8 @@ private fun AccountNotes(
             openInBrowser(update.releaseUrl)
         },
         onConnectGitHub = onConnectGitHub,
+        aiEnabled = !aiNeedsAuthorization(),
+        enableAi = enableAi,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {
