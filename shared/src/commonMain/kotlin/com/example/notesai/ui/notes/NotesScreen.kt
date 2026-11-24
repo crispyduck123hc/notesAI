@@ -6,7 +6,9 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.notesai.PendingEdit
@@ -28,6 +30,7 @@ import com.example.notesai.ui.editor.NoteEditorPane
 import com.example.notesai.ui.openInBrowser
 import com.example.notesai.ui.tree.NoteTreePane
 import com.example.notesai.update.AvailableUpdate
+import kotlinx.coroutines.launch
 
 /**
  * Top-level screen: owns the selection/expansion state and wires the tree pane to the
@@ -47,6 +50,10 @@ internal fun NotesScreen(
     availableUpdate: AvailableUpdate? = null,
     onOpenUpdate: (AvailableUpdate) -> Unit = {},
     onConnectGitHub: suspend () -> Unit,
+    /** Whether the AI grant exists — the initial value; the grant is made through [enableAi]. */
+    aiEnabled: Boolean,
+    /** Runs the AI consent flow; returns an error message, or null when it succeeded. */
+    enableAi: suspend () -> String?,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
@@ -66,6 +73,10 @@ internal fun NotesScreen(
     val gitHubRepos = if (gitHubLogin == null) emptyList() else linkedRepos
 
     val state = rememberNotesScreenState()
+    // The AI grant is a setting with a flow, not a fact of the tree, so the pane reads state that
+    // this screen owns: the initial value comes from the stored grant, the toggle from [enableAi].
+    var aiEnabled by remember { mutableStateOf(aiEnabled) }
+    val screenScope = rememberCoroutineScope()
     // The tree is built from the filtered list; the editor and the GitHub pane keep using the whole mirror, so
     // hiding a row never closes the note that is open or changes what a push sends.
     val visibleGitHubIssues = remember(gitHubIssues, state.issueFilter) { gitHubIssues.filteredBy(state.issueFilter) }
@@ -131,6 +142,20 @@ internal fun NotesScreen(
             accountEmail = account.email,
             sync = sync,
             conflictCount = conflictItems.size,
+            aiEnabled = aiEnabled,
+            aiBusy = state.aiBusy,
+            onEnableAi = {
+                screenScope.launch {
+                    state.aiBusy = true
+                    try {
+                        val notice = enableAi()
+                        if (notice == null) aiEnabled = true
+                        state.aiNotice = notice
+                    } finally {
+                        state.aiBusy = false
+                    }
+                }
+            },
             availableUpdate = availableUpdate,
             onOpenUpdate = onOpenUpdate,
             gitHub =

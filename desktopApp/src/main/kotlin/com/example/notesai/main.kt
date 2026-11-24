@@ -48,6 +48,9 @@ private fun runApp() =
         val tokenStore = desktopTokenStore()
         // GitHub gets its own credential slot, so the two providers sign in and out independently.
         val gitHubTokenStore = desktopTokenStore(TokenSlot.GITHUB)
+        // The AI grant is consented on demand and stored separately, so it never disturbs the
+        // Drive sign-in and vice versa.
+        val aiTokenStore = desktopTokenStore(TokenSlot.AI)
         val pendingEdit = remember { PendingEdit() }
         var closing by remember { mutableStateOf(false) }
 
@@ -79,6 +82,7 @@ private fun runApp() =
                 driverFactory = driverFactory,
                 tokenStore = tokenStore,
                 gitHubTokenStore = gitHubTokenStore,
+                aiTokenStore = aiTokenStore,
                 pendingEdit = pendingEdit,
             )
         }

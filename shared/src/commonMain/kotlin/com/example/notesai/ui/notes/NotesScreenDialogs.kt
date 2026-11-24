@@ -41,6 +41,16 @@ internal fun NotesScreenDialogs(
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
 ) {
+    val aiNotice = state.aiNotice
+    if (aiNotice != null) {
+        MessageDialog(
+            title = "AI",
+            message = aiNotice,
+            onConfirm = { state.aiNotice = null },
+            onDismiss = { state.aiNotice = null },
+        )
+    }
+
     if (state.showDateRange) {
         DateRangeCalendarDialog(
             from = state.issueFilter.createdFrom,

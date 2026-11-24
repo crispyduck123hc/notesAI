@@ -12,5 +12,7 @@ fun MainViewController() =
             tokenStore = KeychainTokenStore(),
             // A separate Keychain item, so the two providers sign in and out independently.
             gitHubTokenStore = KeychainTokenStore(account = "github"),
+            // The AI grant is consented on demand and stored separately, like the GitHub one.
+            aiTokenStore = KeychainTokenStore(account = "ai"),
         )
     }

@@ -37,6 +37,12 @@ internal class NotesScreenState(
     var selectedFolderId by mutableStateOf(NoteRepository.ROOT_FOLDER_ID)
     var selectedRef by mutableStateOf<NoteRef?>(null)
 
+    /** Set while the AI consent flow runs; the sidebar's Enable AI button disables itself. */
+    var aiBusy by mutableStateOf(false)
+
+    /** The one message about enabling AI, shown once and cleared on dismissal. */
+    var aiNotice by mutableStateOf<String?>(null)
+
     /** Which issues the tree shows. A view concern; the mirror keeps everything. */
     var issueFilter by mutableStateOf(IssueFilter())
     var showDateRange by mutableStateOf(false)

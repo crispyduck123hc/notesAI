@@ -12,6 +12,7 @@ import com.example.notesai.auth.generateState
 import io.ktor.client.HttpClient
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
@@ -25,8 +26,12 @@ private const val PROMPT = "Reply with exactly: OK"
 
 private val CANDIDATE_SCOPES =
     listOf(
-        "https://www.googleapis.com/auth/generative-language",
+        // The scope the app ships with: the AI Studio quickstart's own choice for the Gemini API,
+        // and the only one the consent configuration accepts.
         "https://www.googleapis.com/auth/cloud-platform",
+        // Kept as the second candidate so a future re-narrowing can be validated the same way:
+        // generateContent accepts the bare scope, but the consent configuration refuses it.
+        "https://www.googleapis.com/auth/generative-language",
     )
 
 private const val GENERATE_CONTENT_URL =
@@ -55,11 +60,17 @@ private const val MODEL_NAME = "gemini-2.5-flash"
 suspend fun main(): Unit =
     HttpClient().use { http ->
         println("AI scope spike — model $MODEL_NAME")
-        println("Each attempt opens a browser for consent. Close the tab and return here afterwards.\n")
+        println("Each attempt opens a browser for consent. Close the tab and return here afterwards.")
+        println(
+            "Your Cloud project id (optional, blank to skip). OAuth calls to the Gemini API may need " +
+                "the quota project named in an x-goog-user-project header — the AI Studio quickstart sends it:",
+        )
+        val projectId = readlnOrNull()?.trim().orEmpty()
+        println()
 
         val results =
             CANDIDATE_SCOPES.map { scope ->
-                attempt(http, scope)
+                attempt(http, scope, projectId)
             }
 
         println()
@@ -96,6 +107,7 @@ private data class Attempt(
 private suspend fun attempt(
     http: HttpClient,
     scope: String,
+    projectId: String,
 ): Attempt {
     println("== attempt: $scope")
 
@@ -136,6 +148,9 @@ private suspend fun attempt(
     val generate =
         http.post(GENERATE_CONTENT_URL) {
             bearerAuth(accessToken)
+            // The quota project: Google needs to know whose free-tier quota the call draws from.
+            // The AI Studio quickstart sends this header with every OAuth'd call.
+            if (projectId.isNotBlank()) header("x-goog-user-project", projectId)
             contentType(ContentType.Application.Json)
             setBody("""{"contents":[{"parts":[{"text":"$PROMPT"}]}]}""")
         }

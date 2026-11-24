@@ -61,6 +61,9 @@ internal class ScreenFixture {
             availableUpdate = availableUpdate,
             onOpenUpdate = onOpenUpdate,
             onConnectGitHub = onConnectGitHub,
+            // AI is off in the fixture; the grant tests cover the grant itself.
+            aiEnabled = false,
+            enableAi = { "AI is not available in the test fixture" },
             onRetrySync = {},
             onResolveConflict = { _, _ -> },
             onSignOut = onSignOut,

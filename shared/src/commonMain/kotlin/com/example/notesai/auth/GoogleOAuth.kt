@@ -24,6 +24,22 @@ val DEFAULT_SCOPES =
     )
 
 /**
+ * The scope the AI features need. Deliberately granted **separately** from the Drive sign-in:
+ * a user who never touches AI never sees a wider consent screen, and the two grants expire,
+ * refresh and can be revoked independently. Requested on demand — the settings entry runs the
+ * consent flow — and stored in its own credential slot ([TokenSlot.AI]).
+ *
+ * The value is `cloud-platform`, not the Gemini-specific `generative-language` scope, after
+ * checking both against the live surfaces: Google's own AI Studio OAuth quickstart requests
+ * `cloud-platform` for the Gemini API, and the Cloud Console refuses the bare
+ * `generative-language` scope in the consent configuration ("the following scope(s) were not
+ * added because they are invalid") — while `generateContent` itself accepts it, the consent
+ * flow has to accept it first. The blast radius of the broader scope is bounded by the model:
+ * the AI grant lives in the user's own project, consented by the user to themselves.
+ */
+const val AI_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+
+/**
  * OAuth client configuration. Client ids are not secrets for installed apps, but each
  * platform needs its own client registered in the Google Cloud Console — see
  * `defaultOAuthConfig()` per platform.

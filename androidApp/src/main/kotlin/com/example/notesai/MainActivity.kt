@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
                 driverFactory = driverFactory,
                 tokenStore = AndroidKeystoreTokenStore(context = this),
                 gitHubTokenStore = AndroidKeystoreTokenStore(context = this, slot = TokenSlot.GITHUB),
+                aiTokenStore = AndroidKeystoreTokenStore(context = this, slot = TokenSlot.AI),
             )
         }
     }
