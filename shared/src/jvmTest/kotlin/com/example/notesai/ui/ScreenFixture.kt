@@ -3,6 +3,7 @@ package com.example.notesai.ui
 import androidx.compose.runtime.Composable
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.GeminiClient
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.NoteRepository
 import com.example.notesai.db.NotesDatabase
@@ -64,6 +65,8 @@ internal class ScreenFixture {
             // AI is off in the fixture; the grant tests cover the grant itself.
             aiEnabled = false,
             enableAi = { "AI is not available in the test fixture" },
+            // The transport is a stub: the AI feature is off in the fixture, so it is never called.
+            gemini = GeminiClient(http = HttpClient(), aiAccessToken = { null }),
             onRetrySync = {},
             onResolveConflict = { _, _ -> },
             onSignOut = onSignOut,

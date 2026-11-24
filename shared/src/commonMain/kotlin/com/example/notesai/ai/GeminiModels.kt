@@ -10,8 +10,14 @@ internal val geminiJson =
         encodeDefaults = false
     }
 
-/** The model generation requests run against by default. One constant, one setting later. */
-const val DEFAULT_AI_MODEL = "gemini-2.5-flash"
+/**
+ * The model generation requests run against by default. One constant, one setting later.
+ *
+ * Models retire: `gemini-2.5-flash` stopped serving new users (a 404 whose message names the
+ * successor), so this follows Google's free-tier list — currently `gemini-3.8-flash` — and is
+ * the one line to change when it moves again.
+ */
+const val DEFAULT_AI_MODEL = "gemini-3.8-flash"
 
 @Serializable
 internal data class GeminiGenerateRequest(

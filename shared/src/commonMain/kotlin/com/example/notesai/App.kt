@@ -15,6 +15,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
+import com.example.notesai.ai.GeminiClient
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GitHubAuthManager
 import com.example.notesai.auth.GoogleAuthManager
@@ -185,6 +186,7 @@ fun App(
                     driverFactory = driverFactory,
                     http = http,
                     accessToken = auth::accessToken,
+                    aiAccessToken = auth::aiAccessToken,
                     pendingEdit = pendingEdit,
                     gitHubAuth = gitHubAuth,
                     gitHubLogin = gitHubLogin,
@@ -235,6 +237,8 @@ private fun AccountNotes(
     driverFactory: DatabaseDriverFactory,
     http: HttpClient,
     accessToken: suspend () -> String?,
+    /** The AI grant's access token; null until the user enables AI in settings. */
+    aiAccessToken: suspend () -> String?,
     pendingEdit: PendingEdit,
     gitHubAuth: GitHubAuthManager,
     gitHubLogin: String?,
@@ -287,6 +291,11 @@ private fun AccountNotes(
 
     val drive = remember(http, accessToken) { DriveClient(http, accessToken) }
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
+
+    // The AI transport rides the account's own AI grant. The quota-project setting does not exist
+    // yet: whether Google requires the header is what the spike and the first live call settle,
+    // and an unused setting is worse than a missing one.
+    val gemini = remember(http, aiAccessToken) { GeminiClient(http = http, aiAccessToken = aiAccessToken) }
     val scope = rememberCoroutineScope()
 
     // One value for the sidebar, so it cannot say "syncing" and show an error at the same time.
@@ -381,6 +390,7 @@ private fun AccountNotes(
         onConnectGitHub = onConnectGitHub,
         aiEnabled = !aiNeedsAuthorization(),
         enableAi = enableAi,
+        gemini = gemini,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {

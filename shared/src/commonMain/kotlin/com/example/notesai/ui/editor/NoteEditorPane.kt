@@ -22,8 +22,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,13 +47,18 @@ import androidx.compose.ui.unit.dp
 import com.example.notesai.PendingEdit
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
+import com.example.notesai.ui.dialogs.TextPromptDialog
 import com.example.notesai.ui.theme.DateRangeIcon
 import com.example.notesai.ui.theme.Dimens
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
 private const val WRITE_DEBOUNCE_MS = 300L
@@ -73,6 +81,10 @@ internal fun NoteEditorPane(
     onToggleComplete: (() -> Unit)? = null,
     /** Opens the issue-list date-range calendar; non-null only while a GitHub issue is open. */
     onPickCalendarRange: (() -> Unit)? = null,
+    /** Streams an AI reply for a prompt; non-null only when the AI grant exists. */
+    streamAi: ((String) -> Flow<String>)? = null,
+    /** Reports a failed AI invocation; the screen shows it the way it shows other notices. */
+    onAiFailed: (String) -> Unit = {},
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
@@ -104,6 +116,42 @@ internal fun NoteEditorPane(
     // anything is drawn. Keyed on the document's identity so it re-initializes only when a different note is selected,
     // so the async Flow re-emission from our own write can't clobber what's typed.
     val state = remember(document.ref) { TextFieldState(document.content) }
+
+    // Ask AI. The reply streams straight into the field at the caret the user had — "direct
+    // insert" — and the field is read-only while it does: two writers to one buffer fight over
+    // the caret, and generation lasts seconds. Stopping keeps what arrived (it is just text);
+    // a failure reports through the screen's notice dialog.
+    val paneScope = rememberCoroutineScope()
+    var aiJob by remember { mutableStateOf<Job?>(null) }
+    var showAiPrompt by remember { mutableStateOf(false) }
+
+    fun startAi(request: String) {
+        val stream = streamAi ?: return
+        val insertAt = state.selection.start.coerceIn(0, state.text.length)
+        var offset = insertAt
+        aiJob =
+            paneScope.launch {
+                try {
+                    stream(askAiPrompt(noteText = state.text.toString(), request = request)).collect { chunk ->
+                        state.edit {
+                            replace(offset, offset, chunk)
+                            selection = TextRange(offset + chunk.length)
+                        }
+                        offset += chunk.length
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (
+                    @Suppress("TooGenericExceptionCaught")
+                    t: Throwable,
+                ) {
+                    // What arrived stays: it is ordinary note text now, deletable like any other.
+                    onAiFailed("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                } finally {
+                    aiJob = null
+                }
+            }
+    }
 
     // When the buffer last changed *because the user changed it*. A save can happen much later than the keystroke --
     // the debounce waits for a pause, and disposing the editor flushes whatever is left -- and `updatedAt` has to
@@ -185,6 +233,19 @@ internal fun NoteEditorPane(
             pendingEdit.withdraw()
             onChange(state.text.toString(), lastTypedAt.value)
         }
+    }
+
+    if (showAiPrompt) {
+        TextPromptDialog(
+            title = "Ask AI",
+            fieldLabel = "What should the AI do with this note?",
+            confirmLabel = "Generate",
+            onDismiss = { showAiPrompt = false },
+            onConfirm = { request ->
+                showAiPrompt = false
+                startAi(request)
+            },
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -270,6 +331,24 @@ internal fun NoteEditorPane(
             if (onLinkNote != null) {
                 TextButton(onClick = onLinkNote) { Text("\u21aa Link note") }
             }
+            // The note's text and the user's request are what leave the device, only when the
+            // user asks — that is the feature's whole privacy statement, stated in [askAiPrompt].
+            // While it streams, the button is the Stop: the stream writes into the field, so the
+            // user must not be writing into the stream.
+            if (streamAi != null) {
+                TextButton(
+                    onClick = {
+                        val running = aiJob
+                        if (running != null) {
+                            running.cancel()
+                        } else {
+                            showAiPrompt = true
+                        }
+                    },
+                ) {
+                    Text(if (aiJob != null) "\u25a0 Stop AI" else "Ask AI\u2026")
+                }
+            }
         }
 
         // A `BasicTextField` rather than a Material outlined field, so the text is drawn at this Box's own origin.
@@ -294,6 +373,9 @@ internal fun NoteEditorPane(
 
             BasicTextField(
                 state = state,
+                // While the AI stream is writing into the buffer, user input is paused: two writers
+                // to one field fight over the caret, and the field paints what is arriving anyway.
+                readOnly = aiJob != null,
                 // Typing "\* " makes a bullet, Enter continues one, Enter on an empty bullet ends the list,
                 // and deleting the space after a bullet ends it too. Done in the input pipeline rather than as
                 // key events, so a soft keyboard on Android behaves the same as a hardware Return.

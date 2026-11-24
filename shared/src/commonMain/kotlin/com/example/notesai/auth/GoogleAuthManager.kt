@@ -92,7 +92,7 @@ class GoogleAuthManager(
                 ?.filter { it.isNotBlank() }
                 .orEmpty()
                 .toSet()
-        return AI_SCOPE !in granted
+        return AI_GRANT_SCOPES.any { it !in granted }
     }
 
     suspend fun signIn(): AccountInfo = grant(store, config.scopes)
@@ -105,7 +105,7 @@ class GoogleAuthManager(
      */
     suspend fun enableAi(): AccountInfo {
         val store = aiStore ?: throw AuthException("AI is not available in this build.")
-        return grant(store, listOf(AI_SCOPE))
+        return grant(store, AI_GRANT_SCOPES)
     }
 
     fun signOut() {

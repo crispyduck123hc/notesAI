@@ -9,7 +9,9 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -20,6 +22,8 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.notesai.PendingEdit
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.model.NoteRef
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -691,4 +695,71 @@ class NoteEditorPaneTest {
 
     /** The caret position, through the same semantics seam the layout test uses. */
     private fun ComposeUiTest.caretOffset(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorCaretOffsetKey)
+
+    @Test
+    fun anAiReplyStreamsIntoTheFieldAsOneCommittedEdit() =
+        runComposeUiTest {
+            var committed: String? = null
+            var promptSeen: String? = null
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "the body", content = "the body"),
+                    onChange = { text, _ -> committed = text },
+                    streamAi = { prompt ->
+                        promptSeen = prompt
+                        flow {
+                            for (piece in listOf("AI ", "says hi")) emit(piece)
+                        }
+                    },
+                )
+            }
+
+            onNodeWithText("Ask AI\u2026").performClick()
+            onNode(hasSetTextAction() and hasText("What should the AI do", substring = true)).performTextInput("say something nice")
+            onNodeWithText("Generate").performClick()
+
+            // The stream writes into the field at the caret (offset 0 here); the debounced write
+            // commits once, after the stream settles.
+            waitUntil(timeoutMillis = 5_000) { committed == "the bodyAI says hi" }
+            assertEquals(
+                askAiPrompt(noteText = "the body", request = "say something nice"),
+                promptSeen,
+                "the note's text and the request are what travel",
+            )
+        }
+
+    @Test
+    fun stoppingTheAiKeepsWhatArrived() =
+        runComposeUiTest {
+            var committed: String? = null
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "the body", content = "start"),
+                    onChange = { text, _ -> committed = text },
+                    streamAi = { _ ->
+                        flow {
+                            emit("one ")
+                            // Never completes: the Stop button is what ends the stream.
+                            awaitCancellation()
+                        }
+                    },
+                )
+            }
+
+            onNodeWithText("Ask AI\u2026").performClick()
+            onNode(hasSetTextAction() and hasText("What should the AI do", substring = true)).performTextInput("say one")
+            onNodeWithText("Generate").performClick()
+            waitUntil(timeoutMillis = 5_000) {
+                onAllNodesWithText("\u25a0 Stop AI").fetchSemanticsNodes().isNotEmpty()
+            }
+
+            onNodeWithText("\u25a0 Stop AI").performClick()
+
+            // The partial insertion stays: it is ordinary note text now, deletable like any other,
+            // and the button returns so another request can be made.
+            waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("Ask AI\u2026").fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = 5_000) { committed == "startone " }
+        }
 }

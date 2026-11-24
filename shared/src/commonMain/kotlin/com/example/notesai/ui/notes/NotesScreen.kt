@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.GeminiClient
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
@@ -54,6 +55,8 @@ internal fun NotesScreen(
     aiEnabled: Boolean,
     /** Runs the AI consent flow; returns an error message, or null when it succeeded. */
     enableAi: suspend () -> String?,
+    /** The AI transport; built against the account's own AI grant. */
+    gemini: GeminiClient,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
@@ -77,6 +80,13 @@ internal fun NotesScreen(
     // this screen owns: the initial value comes from the stored grant, the toggle from [enableAi].
     var aiEnabled by remember { mutableStateOf(aiEnabled) }
     val screenScope = rememberCoroutineScope()
+    // The stream is offered only when the grant exists; the editor owns the buffer it writes into.
+    val streamAi =
+        if (aiEnabled) {
+            { prompt: String -> gemini.streamGenerate(prompt) }
+        } else {
+            null
+        }
     // The tree is built from the filtered list; the editor and the GitHub pane keep using the whole mirror, so
     // hiding a row never closes the note that is open or changes what a push sends.
     val visibleGitHubIssues = remember(gitHubIssues, state.issueFilter) { gitHubIssues.filteredBy(state.issueFilter) }
@@ -275,6 +285,8 @@ internal fun NotesScreen(
                         state.showDateRange = true
                     }
                 },
+            streamAi = streamAi,
+            onAiFailed = { state.aiNotice = it },
         )
     }
 
