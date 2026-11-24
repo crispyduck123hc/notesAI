@@ -24,20 +24,29 @@ val DEFAULT_SCOPES =
     )
 
 /**
- * The scope the AI features need. Deliberately granted **separately** from the Drive sign-in:
+ * The scopes the AI features need. Deliberately granted **separately** from the Drive sign-in:
  * a user who never touches AI never sees a wider consent screen, and the two grants expire,
  * refresh and can be revoked independently. Requested on demand — the settings entry runs the
- * consent flow — and stored in its own credential slot ([TokenSlot.AI]).
+ * consent flow — and stored in their own credential slot ([TokenSlot.AI]).
  *
- * The value is `cloud-platform`, not the Gemini-specific `generative-language` scope, after
- * checking both against the live surfaces: Google's own AI Studio OAuth quickstart requests
- * `cloud-platform` for the Gemini API, and the Cloud Console refuses the bare
- * `generative-language` scope in the consent configuration ("the following scope(s) were not
- * added because they are invalid") — while `generateContent` itself accepts it, the consent
- * flow has to accept it first. The blast radius of the broader scope is bounded by the model:
- * the AI grant lives in the user's own project, consented by the user to themselves.
+ * The set is a pair, each half decided against a live surface:
+ *
+ * - `generative-language.retriever` — the runtime requirement. A token with only
+ *   `cloud-platform` is refused by the Gemini API with "insufficient authentication scopes"
+ *   (observed live), while the AI Studio quickstart's own credentials carry *only* this scope
+ *   and still call the Generative Language API. The bare `generative-language` scope would be
+ *   the narrower answer, but the Cloud Console refuses it in the consent configuration
+ *   ("the following scope(s) were not added because they are invalid").
+ * - `cloud-platform` — the config requirement: the consent screen cannot express a
+ *   Gemini-only grant, and this is the scope the AI Studio quickstart pairs with `.retriever`.
+ *   Its blast radius is bounded by the model: the AI grant lives in the user's own project,
+ *   consented by the user to themselves.
  */
-const val AI_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+val AI_GRANT_SCOPES =
+    listOf(
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/generative-language.retriever",
+    )
 
 /**
  * OAuth client configuration. Client ids are not secrets for installed apps, but each

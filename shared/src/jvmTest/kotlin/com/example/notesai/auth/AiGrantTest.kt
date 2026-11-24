@@ -64,7 +64,7 @@ class AiGrantTest {
 
     @Test
     fun aiIsAuthorisedWhenTheScopeIsGranted() {
-        val aiStore = AiStubTokenStore(aiStoredToken(AI_SCOPE))
+        val aiStore = AiStubTokenStore(aiStoredToken(AI_GRANT_SCOPES.joinToString(" ")))
         assertFalse(manager(AiStubTokenStore(driveTokens()), aiStore).needsAiAuthorization())
     }
 
@@ -79,7 +79,7 @@ class AiGrantTest {
     @Test
     fun signingOutOfTheAccountClearsTheAiGrantToo() {
         val driveStore = AiStubTokenStore(driveTokens())
-        val aiStore = AiStubTokenStore(aiStoredToken(AI_SCOPE))
+        val aiStore = AiStubTokenStore(aiStoredToken(AI_GRANT_SCOPES.joinToString(" ")))
         manager(driveStore, aiStore).signOut()
 
         assertEquals(null, driveStore.load(), "the Drive grant is cleared with the account")

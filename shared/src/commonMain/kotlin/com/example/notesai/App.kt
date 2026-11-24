@@ -15,6 +15,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
+import com.example.notesai.ai.GeminiClient
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GitHubAuthManager
 import com.example.notesai.auth.GoogleAuthManager
@@ -84,6 +85,15 @@ private const val PERIODIC_SYNC_MILLIS = 60_000L
  * server may already have accepted.
  */
 private const val REQUEST_TIMEOUT_MILLIS = 10_000L
+
+// AI generations run far longer than a Drive call: a stream that thinks for half a minute is
+// normal, so the AI transport carries its own timeouts instead of the shared 10-second one.
+// The request timeout covers the whole stream; the socket timeout is the anti-hang guard that
+// fires when the model stops sending — and a *thinking* model stops sending for minutes at a
+// time, first before the initial token and again between chunks, so the idle tolerance has to
+// be generous. The overall bound is the request timeout, not this.
+private const val AI_REQUEST_TIMEOUT_MILLIS = 5L * 60_000L
+private const val AI_SOCKET_TIMEOUT_MILLIS = 2L * 60_000L
 
 private const val ACCOUNT_MISMATCH_MESSAGE =
     "Sync paused: this database belongs to a different account. Sign out and back in."
@@ -185,6 +195,7 @@ fun App(
                     driverFactory = driverFactory,
                     http = http,
                     accessToken = auth::accessToken,
+                    aiAccessToken = auth::aiAccessToken,
                     pendingEdit = pendingEdit,
                     gitHubAuth = gitHubAuth,
                     gitHubLogin = gitHubLogin,
@@ -235,6 +246,8 @@ private fun AccountNotes(
     driverFactory: DatabaseDriverFactory,
     http: HttpClient,
     accessToken: suspend () -> String?,
+    /** The AI grant's access token; null until the user enables AI in settings. */
+    aiAccessToken: suspend () -> String?,
     pendingEdit: PendingEdit,
     gitHubAuth: GitHubAuthManager,
     gitHubLogin: String?,
@@ -287,6 +300,22 @@ private fun AccountNotes(
 
     val drive = remember(http, accessToken) { DriveClient(http, accessToken) }
     val syncEngine = remember(repository, drive) { NoteSyncEngine(repository, DriveRemote(drive)) }
+
+    // The AI transport rides the account's own AI grant, on its own timeouts: a stream is not a
+    // 10-second Drive call. The quota-project setting does not exist yet: whether Google requires
+    // the header is what the spike and the first live call settle, and an unused setting is worse
+    // than a missing one.
+    val aiHttp =
+        remember {
+            HttpClient {
+                install(HttpTimeout) {
+                    requestTimeoutMillis = AI_REQUEST_TIMEOUT_MILLIS
+                    socketTimeoutMillis = AI_SOCKET_TIMEOUT_MILLIS
+                    connectTimeoutMillis = REQUEST_TIMEOUT_MILLIS
+                }
+            }
+        }
+    val gemini = remember(aiHttp, aiAccessToken) { GeminiClient(http = aiHttp, aiAccessToken = aiAccessToken) }
     val scope = rememberCoroutineScope()
 
     // One value for the sidebar, so it cannot say "syncing" and show an error at the same time.
@@ -381,6 +410,7 @@ private fun AccountNotes(
         onConnectGitHub = onConnectGitHub,
         aiEnabled = !aiNeedsAuthorization(),
         enableAi = enableAi,
+        gemini = gemini,
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {
