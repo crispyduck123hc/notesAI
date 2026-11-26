@@ -12,7 +12,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.AiSession
+import com.example.notesai.ai.AiSessionInvoker
 import com.example.notesai.ai.GeminiClient
+import com.example.notesai.ai.NoteToolbox
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
@@ -57,6 +60,8 @@ internal fun NotesScreen(
     enableAi: suspend () -> String?,
     /** The AI transport; built against the account's own AI grant. */
     gemini: GeminiClient,
+    /** The tool loop for the free-text path; the editor's confirmation dialog lives in the pane. */
+    aiSession: AiSessionInvoker?,
     onRetrySync: () -> Unit,
     onResolveConflict: (id: Long, keepLocal: Boolean) -> Unit,
     onSignOut: () -> Unit,
@@ -84,6 +89,16 @@ internal fun NotesScreen(
     val streamAi =
         if (aiEnabled) {
             { prompt: String -> gemini.streamGenerate(prompt) }
+        } else {
+            null
+        }
+    // The tool loop rides the same grant: the session executes app features the model proposes,
+    // with writes passing through the editor's confirmation dialog on the way.
+    val aiSession =
+        if (aiEnabled) {
+            AiSessionInvoker { request, noteText, approver ->
+                AiSession(gemini, NoteToolbox(repository)).run(request, noteText, approver)
+            }
         } else {
             null
         }
@@ -286,7 +301,8 @@ internal fun NotesScreen(
                     }
                 },
             streamAi = streamAi,
-            onAiFailed = { state.aiNotice = it },
+            aiSession = aiSession,
+            onAiNotice = { state.aiNotice = it },
         )
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -47,12 +48,16 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.AiEvent
+import com.example.notesai.ai.AiSessionInvoker
+import com.example.notesai.ai.GeminiFunctionCall
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.dialogs.TextPromptDialog
 import com.example.notesai.ui.theme.DateRangeIcon
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -85,8 +90,13 @@ internal fun NoteEditorPane(
     onPickCalendarRange: (() -> Unit)? = null,
     /** Streams an AI reply for a prompt; non-null only when the AI grant exists. */
     streamAi: ((String) -> Flow<String>)? = null,
-    /** Reports a failed AI invocation; the screen shows it the way it shows other notices. */
-    onAiFailed: (String) -> Unit = {},
+    /**
+     * The free-text path with tools: the model may ask the app to act (create a note), and the
+     * session reports text chunks and tool turns. Non-null when the AI grant exists.
+     */
+    aiSession: AiSessionInvoker? = null,
+    /** Routes AI notices — failures and tool-turn status alike — to the screen's AI dialog. */
+    onAiNotice: (String) -> Unit = {},
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
@@ -127,6 +137,77 @@ internal fun NoteEditorPane(
     var aiJob by remember { mutableStateOf<Job?>(null) }
     var showAiPrompt by remember { mutableStateOf(false) }
     var aiMenuExpanded by remember { mutableStateOf(false) }
+    // A tool call awaiting the user's click: the model proposes, this dialog decides.
+    var pendingTool by remember { mutableStateOf<Pair<GeminiFunctionCall, CompletableDeferred<Boolean>>?>(null) }
+
+    /**
+     * Inserts one chunk at [offset], moving the caret to its end; returns the next offset.
+     *
+     * List markers only *draw* at line starts — a `[ ] ` landing mid-line paints as raw
+     * brackets (observed on a real note: the first action item appended onto the prose line).
+     * When the insertion point is mid-line and the chunk begins with a marker, a line break is
+     * added first so the marker renders.
+     */
+    fun insertChunk(
+        chunk: String,
+        offset: Int,
+    ): Int {
+        val atLineStart = offset == 0 || state.text[offset - 1] == '\n'
+        val chunkText = if (!atLineStart && parseMarker(chunk, 0) != null) "\n$chunk" else chunk
+        state.edit {
+            replace(offset, offset, chunkText)
+            selection = TextRange(offset + chunkText.length)
+        }
+        return offset + chunkText.length
+    }
+
+    /**
+     * The free-text path with tools: text chunks insert at the caret exactly like the plain
+     * stream; tool turns pause for the user's click through [pendingTool], then the session
+     * carries the result back to the model.
+     */
+    fun startAiSession(request: String) {
+        val session = aiSession ?: return
+        var offset = state.selection.start.coerceIn(0, state.text.length)
+        // Same guard, same reasoning: the model echoes what it was sent, which is the captured text.
+        val guard = EchoGuard(state.text.toString())
+        aiJob =
+            paneScope.launch {
+                try {
+                    session
+                        .run(
+                            request = request,
+                            noteText = state.text.toString(),
+                            approver = { call ->
+                                val deferred = CompletableDeferred<Boolean>()
+                                pendingTool = call to deferred
+                                deferred.await()
+                            },
+                        ).collect { event ->
+                            when (event) {
+                                is AiEvent.Text ->
+                                    guard.feed(event.chunk).takeIf { it.isNotEmpty() }?.let { toInsert ->
+                                        offset = insertChunk(toInsert, offset)
+                                    }
+                                is AiEvent.Notice -> onAiNotice(event.message)
+                                is AiEvent.ToolDone -> Unit
+                            }
+                        }
+                    guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
+                        offset = insertChunk(tail, offset)
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (
+                    @Suppress("TooGenericExceptionCaught")
+                    t: Throwable,
+                ) {
+                    onAiNotice("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                } finally {
+                    aiJob = null
+                }
+            }
+    }
 
     /** [replaceFirstLine] is the catalog's title action: the first line *is* the local note's title. */
     fun startAi(
@@ -149,20 +230,33 @@ internal fun NoteEditorPane(
                 -1
             }
         var replacing = replaceFirstLine
+        // The guard compares against the note text *captured now* — the field changes as chunks
+        // are inserted, but the model echoes what it was sent.
+        val guard = EchoGuard(state.text.toString())
         aiJob =
             paneScope.launch {
                 try {
                     stream(prompt).collect { chunk ->
-                        state.edit {
-                            if (replacing) {
+                        if (replacing) {
+                            // Title action: the first chunk swaps out the whole first line.
+                            state.edit {
                                 replace(offset, firstLineEnd, chunk)
-                                replacing = false
-                            } else {
-                                replace(offset, offset, chunk)
+                                selection = TextRange(offset + chunk.length)
                             }
                             offset += chunk.length
-                            selection = TextRange(offset)
+                            replacing = false
+                        } else {
+                            // Normal insertion goes through the shared path, so markers that
+                            // land mid-line get their line break and actually draw — and the
+                            // guard holds back an echoing model before it duplicates the note.
+                            guard.feed(chunk).takeIf { it.isNotEmpty() }?.let { toInsert ->
+                                offset = insertChunk(toInsert, offset)
+                            }
                         }
+                    }
+                    // A stream that ends still-held is a pure or partial echo; flush the tail.
+                    guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
+                        offset = insertChunk(tail, offset)
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -171,7 +265,7 @@ internal fun NoteEditorPane(
                     t: Throwable,
                 ) {
                     // What arrived stays: it is ordinary note text now, deletable like any other.
-                    onAiFailed("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                    onAiNotice("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
                 } finally {
                     aiJob = null
                 }
@@ -260,6 +354,40 @@ internal fun NoteEditorPane(
         }
     }
 
+    pendingTool?.let { (call, deferred) ->
+        AlertDialog(
+            onDismissRequest = {
+                deferred.complete(false)
+                pendingTool = null
+            },
+            title = { Text("AI requests an action") },
+            text = {
+                Column {
+                    Text(call.name)
+                    call.args?.forEach { (key, value) ->
+                        Text("$key: $value", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deferred.complete(true)
+                        pendingTool = null
+                    },
+                ) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        deferred.complete(false)
+                        pendingTool = null
+                    },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+
     if (showAiPrompt) {
         TextPromptDialog(
             title = "Ask AI",
@@ -268,7 +396,11 @@ internal fun NoteEditorPane(
             onDismiss = { showAiPrompt = false },
             onConfirm = { request ->
                 showAiPrompt = false
-                startAi(askAiPrompt(noteText = state.text.toString(), request = request))
+                if (aiSession != null) {
+                    startAiSession(request)
+                } else {
+                    startAi(askAiPrompt(noteText = state.text.toString(), request = request))
+                }
             },
         )
     }
@@ -360,7 +492,7 @@ internal fun NoteEditorPane(
             // that is the feature's whole privacy statement, stated in the prompt builders. While
             // it streams, the button is the Stop: the stream writes into the field, so the user
             // must not be writing into the stream.
-            if (streamAi != null) {
+            if (streamAi != null || aiSession != null) {
                 Box {
                     TextButton(
                         onClick = {
@@ -375,17 +507,21 @@ internal fun NoteEditorPane(
                         Text(if (aiJob != null) "\u25a0 Stop AI" else "Ask AI\u2026")
                     }
                     DropdownMenu(expanded = aiMenuExpanded, onDismissRequest = { aiMenuExpanded = false }) {
-                        AiAction.entries.forEach { action ->
-                            DropdownMenuItem(
-                                text = { Text(action.label) },
-                                onClick = {
-                                    aiMenuExpanded = false
-                                    startAi(
-                                        aiActionPrompt(action, state.text.toString()),
-                                        replaceFirstLine = action == AiAction.TITLE,
-                                    )
-                                },
-                            )
+                        // Catalog actions run on the plain stream (fixed tasks, no tools); they
+                        // exist only when that path does.
+                        if (streamAi != null) {
+                            AiAction.entries.forEach { action ->
+                                DropdownMenuItem(
+                                    text = { Text(action.label) },
+                                    onClick = {
+                                        aiMenuExpanded = false
+                                        startAi(
+                                            aiActionPrompt(action, state.text.toString()),
+                                            replaceFirstLine = action == AiAction.TITLE,
+                                        )
+                                    },
+                                )
+                            }
                         }
                         HorizontalDivider()
                         DropdownMenuItem(

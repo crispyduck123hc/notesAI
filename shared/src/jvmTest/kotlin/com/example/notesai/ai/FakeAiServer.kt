@@ -34,6 +34,9 @@ class FakeAiServer {
     /** The first [failuresRemaining] calls fail (a 503 wave), then normal replies resume. */
     var failuresRemaining = 0
 
+    /** Pre-scripted bodies, served one per call in order; later calls fall back to defaults. */
+    val scripted = ArrayDeque<String>()
+
     /** How many requests have arrived — the retry policy's witness. */
     var calls = 0
         private set
@@ -49,12 +52,25 @@ class FakeAiServer {
 
     fun stop() = server.stop(0)
 
+    // Scripted, failing, streaming and default replies are four dispatch branches, each an
+    // early return. (detekt: ReturnCount)
+    @Suppress("ReturnCount")
     private fun handle(exchange: HttpExchange) {
         calls++
         val body = exchange.requestBody.readBytes().decodeToString()
         if (failuresRemaining > 0) {
             failuresRemaining--
             respond(exchange, 503, errorJson(503, "UNAVAILABLE", "This model is currently experiencing high demand."))
+            return
+        }
+        scripted.removeFirstOrNull()?.let { scripted ->
+            // Streaming calls get SSE framing even for scripted bodies: the client's parser only
+            // reads `data:` lines, exactly as the real endpoint behaves.
+            if (exchange.requestURI.path.endsWith(":streamGenerateContent")) {
+                respondSse(exchange, listOf(scripted))
+            } else {
+                respond(exchange, 200, scripted)
+            }
             return
         }
         lastAuthorization = exchange.requestHeaders.getFirst("Authorization")

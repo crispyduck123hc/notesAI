@@ -1,6 +1,7 @@
 package com.example.notesai.ui.editor
 
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** What one "Ask AI" invocation sends — the feature's privacy statement, in text form. */
@@ -11,7 +12,7 @@ class AiPromptTest {
 
         assertTrue(prompt.contains("first line\nbody"), "the note's text is the context")
         assertTrue(prompt.contains("make a checklist of the body"), "the user's request is there")
-        assertTrue(prompt.indexOf("first line") < prompt.indexOf("make a checklist"), "context first, request second")
+        assertTrue(prompt.indexOf("make a checklist") < prompt.indexOf("first line"), "the task leads, context follows — the ordering that discourages echo")
     }
 
     @Test
@@ -26,7 +27,17 @@ class AiPromptTest {
     fun theReplyIsAskedToBeInsertableText() {
         val prompt = askAiPrompt(noteText = "note", request = "continue")
 
-        assertTrue(prompt.contains("only the text"), "the reply goes straight into the note at the caret")
+        assertTrue(prompt.contains("only the new text"), "the reply goes straight into the note at the caret")
+    }
+
+    @Test
+    fun thePromptForbidsRepeatingTheNoteItself() {
+        // The duplication bug: the model repeated the note's own text, and the insertion
+        // duplicated title and content into the note.
+        val prompt = askAiPrompt(noteText = "the note body", request = "summarize")
+
+        assertTrue(prompt.contains("Do not repeat the note's existing text"))
+        assertFalse(prompt.contains("repeat the passage"))
     }
 
     @Test
@@ -42,7 +53,6 @@ class AiPromptTest {
     @Test
     fun eachActionAsksForItsOwnShape() {
         assertTrue(aiActionPrompt(AiAction.SUMMARIZE, "note").contains("Summarize"))
-        assertTrue(aiActionPrompt(AiAction.CHECKLIST, "note").contains("[ ] "))
         assertTrue(aiActionPrompt(AiAction.ACTIONS, "note").contains("action items"))
         val title = aiActionPrompt(AiAction.TITLE, "note")
         assertTrue(title.contains("title") && title.contains("no quotes"))

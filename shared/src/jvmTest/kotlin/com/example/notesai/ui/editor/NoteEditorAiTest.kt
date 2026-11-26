@@ -9,12 +9,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.AiEvent
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.model.NoteRef
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /**
  * The AI features of the editor, driven for real: the catalog menu, the free-text dialog, the
@@ -133,5 +135,67 @@ class NoteEditorAiTest {
 
             // The first line is the local note's title, so it is replaced wholesale; the body stays.
             waitUntil(timeoutMillis = 5_000) { committed == "A better title\nbody text" }
+        }
+
+    @Test
+    fun theSessionPathInsertsItsTextLikeThePlainStream() =
+        runComposeUiTest {
+            var committed: String? = null
+            var approverCalled = false
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document = NoteDocument(ref = NoteRef.Local(1), title = "the body", content = "the body"),
+                    onChange = { text, _ -> committed = text },
+                    aiSession = { _, _, approver ->
+                        // The pane inserts text events and shows the approval dialog for tool
+                        // calls; this fake never asks, so the approver is not consulted.
+                        approverCalled = false
+                        flow {
+                            emit(AiEvent.Text("session "))
+                            emit(AiEvent.ToolDone("create_note", approved = true, created = true))
+                            emit(AiEvent.Text("text"))
+                        }
+                    },
+                )
+            }
+
+            onNodeWithText("Ask AI\u2026").performClick()
+            onNodeWithText("Ask anything\u2026").performClick()
+            onNode(hasSetTextAction() and hasText("What should the AI do", substring = true)).performTextInput("make a note")
+            onNodeWithText("Generate").performClick()
+
+            waitUntil(timeoutMillis = 5_000) { committed == "the bodysession text" }
+            assertFalse(approverCalled)
+        }
+
+    @Test
+    fun aChecklistItemLandingMidLineStartsANewLineSoItDraws() =
+        runComposeUiTest {
+            // The real bug: the caret sat at the end of the prose line, the first action item
+            // appended onto it, and the marker only *draws* at line starts — so the note showed
+            // raw square brackets (see the AI Testing Note in the user's own database).
+            var committed: String? = null
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document =
+                        NoteDocument(
+                            ref = NoteRef.Local(1),
+                            title = "the body",
+                            content = "prose that ends without a newline",
+                        ),
+                    onChange = { text, _ -> committed = text },
+                    streamAi = { _ -> flow { emit("[ ] the first action") } },
+                )
+            }
+
+            // The caret defaults to the end of the text — mid-line.
+            onNodeWithText("Ask AI\u2026").performClick()
+            onNodeWithText("Extract actions").performClick()
+
+            waitUntil(timeoutMillis = 5_000) {
+                committed == "prose that ends without a newline\n[ ] the first action"
+            }
         }
 }

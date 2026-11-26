@@ -65,6 +65,7 @@ internal class ScreenFixture {
             // AI is off in the fixture; the grant tests cover the grant itself.
             aiEnabled = false,
             enableAi = { "AI is not available in the test fixture" },
+            aiSession = null,
             // The transport is a stub: the AI feature is off in the fixture, so it is never called.
             gemini = GeminiClient(http = HttpClient(), aiAccessToken = { null }),
             onRetrySync = {},
