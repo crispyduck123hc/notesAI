@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.encodeToString
 import kotlin.random.Random
 
@@ -79,7 +80,11 @@ class GeminiClient(
         model: String = DEFAULT_AI_MODEL,
     ): String =
         withRetries {
-            val response = postModel(generateUrl(model), prompt)
+            val response =
+                postModel(
+                    generateUrl(model),
+                    GeminiGenerateRequest(contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = prompt))))),
+                )
             val text =
                 if (response.status.isSuccess()) {
                     geminiJson.decodeFromString<GeminiGenerateResponse>(response.bodyAsText()).singleText()
@@ -89,25 +94,38 @@ class GeminiClient(
             text ?: throw AiException("The model replied with no text.", AiErrorKind.OTHER)
         }
 
-    /**
-     * One prompt, an answer that arrives in pieces: a [Flow] of text fragments in order.
-     *
-     * The transport is Server-Sent Events (`?alt=sse`): a line-oriented stream where each event
-     * is `data: {json}`, one partial response per event, and the fragments concatenate into
-     * exactly what a non-streamed call would have returned.
-     */
+    /** Free text in, text chunks out — no tools. The catalog actions' simpler contract. */
     fun streamGenerate(
         prompt: String,
         model: String = DEFAULT_AI_MODEL,
     ): Flow<String> =
+        streamConversation(
+            contents = listOf(GeminiContent(role = "user", parts = listOf(GeminiPart(text = prompt)))),
+            tools = null,
+            model = model,
+        ).mapNotNull { it.text?.takeIf { chunk -> chunk.isNotEmpty() } }
+
+    /**
+     * A conversation, turn by turn: text parts stream out as they arrive, and **function-call
+     * parts are surfaced as parts too** — the caller runs the tool loop (confirm, execute,
+     * append the response turn) and calls this again with the extended contents.
+     *
+     * Function-call turns must be echoed back verbatim (thought signature included), which is
+     * why this emits parts rather than flattening everything to text.
+     */
+    internal fun streamConversation(
+        contents: List<GeminiContent>,
+        tools: List<GeminiTool>? = null,
+        model: String = DEFAULT_AI_MODEL,
+    ): Flow<GeminiPart> =
         flow {
-            // A refused-before-first-byte stream is retryable like a whole answer; once text has
-            // reached the note, retrying would duplicate it, so mid-stream failures are final.
+            // A refused-before-first-byte stream is retryable like a whole answer; once a part has
+            // been surfaced, retrying would duplicate it, so mid-stream failures are final.
             var attempt = 0
             while (true) {
                 var emitted = false
                 try {
-                    val response = postModel(streamUrl(model), prompt) { parameter("alt", "sse") }
+                    val response = postConversation(streamUrl(model), contents, tools) { parameter("alt", "sse") }
                     if (!response.status.isSuccess()) throw response.aiException()
                     val channel = response.bodyAsChannel()
                     // A thinking model goes silent for minutes between chunks; the socket timeout
@@ -135,7 +153,10 @@ class GeminiClient(
             }
         }
 
-    private suspend fun FlowCollector<String>.emitChunk(line: String) {
+    // Three exits, each a distinct state: not an SSE line, a keep-alive, or a real event.
+    // (detekt: ReturnCount)
+    @Suppress("ReturnCount")
+    private suspend fun FlowCollector<GeminiPart>.emitChunk(line: String) {
         val payload =
             when {
                 line.startsWith(SSE_DATA_PREFIX) -> line.removePrefix(SSE_DATA_PREFIX).trim()
@@ -152,8 +173,12 @@ class GeminiClient(
             } catch (t: Throwable) {
                 throw AiException("The model stream was unreadable: ${t.message ?: t}", AiErrorKind.OTHER)
             }
-        val text = chunk.singleText().orEmpty()
-        if (text.isNotEmpty()) emit(text)
+        val candidate = chunk.candidates?.firstOrNull() ?: return
+        for (part in candidate.content?.parts.orEmpty()) {
+            // Text parts stream to the note; a function-call part ends the text turn and starts
+            // the tool turn. Both are the caller's business, so both are surfaced.
+            if (part.text?.isNotEmpty() == true || part.functionCall != null) emit(part)
+        }
     }
 
     // The grant check is its own function so postModel stays within detekt's ThrowsCount: the
@@ -180,12 +205,11 @@ class GeminiClient(
 
     private suspend fun postModel(
         url: String,
-        prompt: String,
+        request: GeminiGenerateRequest,
         configure: HttpRequestBuilder.() -> Unit = {},
     ): HttpResponse {
         val token = aiToken()
         val project = quotaProject()
-        val request = GeminiGenerateRequest(contents = listOf(GeminiContent(parts = listOf(GeminiPart(text = prompt)))))
         return try {
             http.post(url) {
                 header(HttpHeaders.Authorization, "Bearer $token")
@@ -200,6 +224,13 @@ class GeminiClient(
             throw timeoutFailure(timeout, "The model stopped responding before replying.")
         }
     }
+
+    private suspend fun postConversation(
+        url: String,
+        contents: List<GeminiContent>,
+        tools: List<GeminiTool>?,
+        configure: HttpRequestBuilder.() -> Unit = {},
+    ): HttpResponse = postModel(url, GeminiGenerateRequest(contents = contents, tools = tools), configure)
 }
 
 // A timeout failure: the ktor message is a URL plus a millisecond count, and the reader needs

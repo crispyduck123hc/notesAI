@@ -2,6 +2,7 @@ package com.example.notesai.ai
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 /** Compact JSON for the Gemini REST payloads. */
 internal val geminiJson =
@@ -24,6 +25,8 @@ const val DEFAULT_AI_MODEL = "gemini-3.5-flash-lite"
 @Serializable
 internal data class GeminiGenerateRequest(
     val contents: List<GeminiContent>,
+    /** Function-calling: the tools the model may ask the app to execute. */
+    val tools: List<GeminiTool>? = null,
 )
 
 @Serializable
@@ -35,7 +38,60 @@ internal data class GeminiContent(
 
 @Serializable
 internal data class GeminiPart(
-    val text: String,
+    /** Text content; absent on function-call and function-response parts. */
+    val text: String? = null,
+    /** Set when the model asks the app to call one of the declared tools. */
+    val functionCall: GeminiFunctionCall? = null,
+    /** Set on parts the app sends back with a tool's result. */
+    val functionResponse: GeminiFunctionResponse? = null,
+    /**
+     * Gemini 3's reasoning trace, attached by the model to its own parts. A turn containing a
+     * function call must be echoed back **verbatim** — signature included — or the API refuses
+     * the continuation (verified live).
+     */
+    val thoughtSignature: String? = null,
+)
+
+@Serializable
+internal data class GeminiFunctionCall(
+    val name: String,
+    /** Free-form JSON object of arguments, as the model produced them. */
+    val args: JsonObject? = null,
+    val id: String? = null,
+)
+
+@Serializable
+internal data class GeminiFunctionResponse(
+    val name: String,
+    /** Free-form JSON object: what the app did, or why it refused. */
+    val response: JsonObject,
+)
+
+@Serializable
+internal data class GeminiTool(
+    val functionDeclarations: List<GeminiFunctionDeclaration>,
+)
+
+@Serializable
+internal data class GeminiFunctionDeclaration(
+    val name: String,
+    val description: String,
+    val parameters: GeminiSchema,
+)
+
+@Serializable
+internal data class GeminiSchema(
+    // No default on purpose: the compact JSON config omits values equal to their default, and a
+    // schema without an explicit type is refused by the API ("only allowed for OBJECT type").
+    val type: String,
+    val properties: Map<String, GeminiSchemaProperty> = emptyMap(),
+    val required: List<String> = emptyList(),
+)
+
+@Serializable
+internal data class GeminiSchemaProperty(
+    val type: String,
+    val description: String? = null,
 )
 
 @Serializable
@@ -68,5 +124,6 @@ internal fun GeminiGenerateResponse.singleText(): String? =
         ?.firstOrNull()
         ?.content
         ?.parts
-        ?.joinToString(separator = "") { it.text }
+        ?.mapNotNull { it.text }
+        ?.joinToString(separator = "")
         ?.takeIf { it.isNotEmpty() }

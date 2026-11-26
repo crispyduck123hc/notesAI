@@ -15,7 +15,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
+import com.example.notesai.ai.AiSession
+import com.example.notesai.ai.AiSessionInvoker
 import com.example.notesai.ai.GeminiClient
+import com.example.notesai.ai.NoteToolbox
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GitHubAuthManager
 import com.example.notesai.auth.GoogleAuthManager
@@ -411,6 +414,14 @@ private fun AccountNotes(
         aiEnabled = !aiNeedsAuthorization(),
         enableAi = enableAi,
         gemini = gemini,
+        aiSession =
+            if (!aiNeedsAuthorization()) {
+                AiSessionInvoker { request, noteText, approver ->
+                    AiSession(gemini, NoteToolbox(repository)).run(request, noteText, approver)
+                }
+            } else {
+                null
+            },
         onRetrySync = { scope.launch { runSync(pushSettleMillis = 0L) } },
         onResolveConflict = { id, keepLocal ->
             scope.launch {

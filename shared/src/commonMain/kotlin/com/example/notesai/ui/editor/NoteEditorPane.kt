@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -47,12 +48,16 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.PendingEdit
+import com.example.notesai.ai.AiEvent
+import com.example.notesai.ai.AiSessionInvoker
+import com.example.notesai.ai.GeminiFunctionCall
 import com.example.notesai.model.Completion
 import com.example.notesai.model.NoteDocument
 import com.example.notesai.ui.dialogs.TextPromptDialog
 import com.example.notesai.ui.theme.DateRangeIcon
 import com.example.notesai.ui.theme.Dimens
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -85,6 +90,11 @@ internal fun NoteEditorPane(
     onPickCalendarRange: (() -> Unit)? = null,
     /** Streams an AI reply for a prompt; non-null only when the AI grant exists. */
     streamAi: ((String) -> Flow<String>)? = null,
+    /**
+     * The free-text path with tools: the model may ask the app to act (create a note), and the
+     * session reports text chunks and tool turns. Non-null when the AI grant exists.
+     */
+    aiSession: AiSessionInvoker? = null,
     /** Reports a failed AI invocation; the screen shows it the way it shows other notices. */
     onAiFailed: (String) -> Unit = {},
     /** Null for local notes; issues can be handed to the browser. */
@@ -127,6 +137,59 @@ internal fun NoteEditorPane(
     var aiJob by remember { mutableStateOf<Job?>(null) }
     var showAiPrompt by remember { mutableStateOf(false) }
     var aiMenuExpanded by remember { mutableStateOf(false) }
+    // A tool call awaiting the user's click: the model proposes, this dialog decides.
+    var pendingTool by remember { mutableStateOf<Pair<GeminiFunctionCall, CompletableDeferred<Boolean>>?>(null) }
+
+    /** Inserts one chunk at [offset], moving the caret to its end; returns the next offset. */
+    fun insertChunk(
+        chunk: String,
+        offset: Int,
+    ): Int {
+        state.edit {
+            replace(offset, offset, chunk)
+            selection = TextRange(offset + chunk.length)
+        }
+        return offset + chunk.length
+    }
+
+    /**
+     * The free-text path with tools: text chunks insert at the caret exactly like the plain
+     * stream; tool turns pause for the user's click through [pendingTool], then the session
+     * carries the result back to the model.
+     */
+    fun startAiSession(request: String) {
+        val session = aiSession ?: return
+        var offset = state.selection.start.coerceIn(0, state.text.length)
+        aiJob =
+            paneScope.launch {
+                try {
+                    session
+                        .run(
+                            request = request,
+                            noteText = state.text.toString(),
+                            approver = { call ->
+                                val deferred = CompletableDeferred<Boolean>()
+                                pendingTool = call to deferred
+                                deferred.await()
+                            },
+                        ).collect { event ->
+                            when (event) {
+                                is AiEvent.Text -> offset = insertChunk(event.chunk, offset)
+                                is AiEvent.ToolDone -> Unit
+                            }
+                        }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (
+                    @Suppress("TooGenericExceptionCaught")
+                    t: Throwable,
+                ) {
+                    onAiFailed("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                } finally {
+                    aiJob = null
+                }
+            }
+    }
 
     /** [replaceFirstLine] is the catalog's title action: the first line *is* the local note's title. */
     fun startAi(
@@ -260,6 +323,40 @@ internal fun NoteEditorPane(
         }
     }
 
+    pendingTool?.let { (call, deferred) ->
+        AlertDialog(
+            onDismissRequest = {
+                deferred.complete(false)
+                pendingTool = null
+            },
+            title = { Text("AI requests an action") },
+            text = {
+                Column {
+                    Text(call.name)
+                    call.args?.forEach { (key, value) ->
+                        Text("$key: $value", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        deferred.complete(true)
+                        pendingTool = null
+                    },
+                ) { Text("Allow") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        deferred.complete(false)
+                        pendingTool = null
+                    },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+
     if (showAiPrompt) {
         TextPromptDialog(
             title = "Ask AI",
@@ -268,7 +365,11 @@ internal fun NoteEditorPane(
             onDismiss = { showAiPrompt = false },
             onConfirm = { request ->
                 showAiPrompt = false
-                startAi(askAiPrompt(noteText = state.text.toString(), request = request))
+                if (aiSession != null) {
+                    startAiSession(request)
+                } else {
+                    startAi(askAiPrompt(noteText = state.text.toString(), request = request))
+                }
             },
         )
     }
@@ -360,7 +461,7 @@ internal fun NoteEditorPane(
             // that is the feature's whole privacy statement, stated in the prompt builders. While
             // it streams, the button is the Stop: the stream writes into the field, so the user
             // must not be writing into the stream.
-            if (streamAi != null) {
+            if (streamAi != null || aiSession != null) {
                 Box {
                     TextButton(
                         onClick = {
@@ -375,17 +476,21 @@ internal fun NoteEditorPane(
                         Text(if (aiJob != null) "\u25a0 Stop AI" else "Ask AI\u2026")
                     }
                     DropdownMenu(expanded = aiMenuExpanded, onDismissRequest = { aiMenuExpanded = false }) {
-                        AiAction.entries.forEach { action ->
-                            DropdownMenuItem(
-                                text = { Text(action.label) },
-                                onClick = {
-                                    aiMenuExpanded = false
-                                    startAi(
-                                        aiActionPrompt(action, state.text.toString()),
-                                        replaceFirstLine = action == AiAction.TITLE,
-                                    )
-                                },
-                            )
+                        // Catalog actions run on the plain stream (fixed tasks, no tools); they
+                        // exist only when that path does.
+                        if (streamAi != null) {
+                            AiAction.entries.forEach { action ->
+                                DropdownMenuItem(
+                                    text = { Text(action.label) },
+                                    onClick = {
+                                        aiMenuExpanded = false
+                                        startAi(
+                                            aiActionPrompt(action, state.text.toString()),
+                                            replaceFirstLine = action == AiAction.TITLE,
+                                        )
+                                    },
+                                )
+                            }
                         }
                         HorizontalDivider()
                         DropdownMenuItem(
