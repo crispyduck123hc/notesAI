@@ -28,6 +28,10 @@ class FakeAiServer {
     var lastPrompt: String? = null
         private set
 
+    /** The model segment of the last call's path, for asserting that settings travel. */
+    var lastModel: String? = null
+        private set
+
     /** When set, every call fails with this status and body. */
     var failWith: Pair<Int, String>? = null
 
@@ -76,6 +80,12 @@ class FakeAiServer {
         lastAuthorization = exchange.requestHeaders.getFirst("Authorization")
         lastQuotaProject = exchange.requestHeaders.getFirst("x-goog-user-project")
         lastPrompt = Regex("\"text\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(body)?.groupValues?.get(1)
+        lastModel =
+            exchange
+                .requestURI
+                .path
+                .substringAfter("models/")
+                .substringBefore(":")
 
         failWith?.let { (status, errorBody) ->
             respond(exchange, status, errorBody)

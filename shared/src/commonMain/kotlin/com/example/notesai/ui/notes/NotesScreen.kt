@@ -16,6 +16,10 @@ import com.example.notesai.ai.AiSession
 import com.example.notesai.ai.AiSessionInvoker
 import com.example.notesai.ai.GeminiClient
 import com.example.notesai.ai.NoteToolbox
+import com.example.notesai.ai.aiModel
+import com.example.notesai.ai.aiQuotaProject
+import com.example.notesai.ai.recordAiModel
+import com.example.notesai.ai.recordAiQuotaProject
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.data.EntityType
 import com.example.notesai.data.NoteRepository
@@ -84,11 +88,13 @@ internal fun NotesScreen(
     // The AI grant is a setting with a flow, not a fact of the tree, so the pane reads state that
     // this screen owns: the initial value comes from the stored grant, the toggle from [enableAi].
     var aiEnabled by remember { mutableStateOf(aiEnabled) }
+    var aiModel by remember { mutableStateOf(repository.aiModel()) }
+    var aiQuotaProject by remember { mutableStateOf(repository.aiQuotaProject()) }
     val screenScope = rememberCoroutineScope()
     // The stream is offered only when the grant exists; the editor owns the buffer it writes into.
     val streamAi =
         if (aiEnabled) {
-            { prompt: String -> gemini.streamGenerate(prompt) }
+            { prompt: String -> gemini.streamGenerate(prompt, model = repository.aiModel()) }
         } else {
             null
         }
@@ -97,7 +103,7 @@ internal fun NotesScreen(
     val aiSession =
         if (aiEnabled) {
             AiSessionInvoker { request, noteText, approver ->
-                AiSession(gemini, NoteToolbox(repository)).run(request, noteText, approver)
+                AiSession(gemini, NoteToolbox(repository)).run(request, noteText, model = repository.aiModel(), approver = approver)
             }
         } else {
             null
@@ -169,6 +175,16 @@ internal fun NotesScreen(
             conflictCount = conflictItems.size,
             aiEnabled = aiEnabled,
             aiBusy = state.aiBusy,
+            aiModel = aiModel,
+            onPickAiModel = { model ->
+                repository.recordAiModel(model)
+                aiModel = model
+            },
+            aiQuotaProject = aiQuotaProject,
+            onSetAiQuotaProject = { project ->
+                repository.recordAiQuotaProject(project)
+                aiQuotaProject = repository.aiQuotaProject()
+            },
             onEnableAi = {
                 screenScope.launch {
                     state.aiBusy = true

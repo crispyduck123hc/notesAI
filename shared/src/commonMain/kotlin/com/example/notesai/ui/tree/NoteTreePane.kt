@@ -32,9 +32,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.notesai.APP_VERSION
+import com.example.notesai.ai.AI_MODEL_CHOICES
 import com.example.notesai.github.CreatedWithin
 import com.example.notesai.model.NoteRef
 import com.example.notesai.model.NoteTreeItem
+import com.example.notesai.ui.dialogs.TextPromptDialog
 import com.example.notesai.ui.notes.SyncUiState
 import com.example.notesai.ui.theme.Dimens
 import com.example.notesai.update.AvailableUpdate
@@ -53,6 +55,11 @@ internal fun NoteTreePane(
     aiEnabled: Boolean,
     aiBusy: Boolean,
     onEnableAi: () -> Unit,
+    /** The AI settings, live from the account's database. */
+    aiModel: String,
+    onPickAiModel: (String) -> Unit,
+    aiQuotaProject: String?,
+    onSetAiQuotaProject: (String?) -> Unit,
     /** Non-null when a newer release has been published than the one running. */
     availableUpdate: AvailableUpdate?,
     gitHub: GitHubPaneState,
@@ -235,9 +242,65 @@ internal fun NoteTreePane(
         // AI features ride a separate Google grant, consented on demand: a user who never
         // touches AI never sees a wider consent screen at sign-in. The grant *is* the setting —
         // there is no separate toggle to disagree with the consent screen.
+        var showQuotaProjectDialog by remember { mutableStateOf(false) }
+        if (showQuotaProjectDialog) {
+            TextPromptDialog(
+                title = "Quota project",
+                fieldLabel = "Your Cloud project id (x-goog-user-project)",
+                confirmLabel = "Save",
+                initialValue = aiQuotaProject.orEmpty(),
+                onDismiss = { showQuotaProjectDialog = false },
+                onConfirm = { project ->
+                    onSetAiQuotaProject(project)
+                    showQuotaProjectDialog = false
+                },
+            )
+        }
         if (aiEnabled) {
+            // The settings are live reads of the account's database, so a change here applies to
+            // the next request without a restart.
             Text(
                 text = "AI: enabled",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Box {
+                var modelMenuExpanded by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { modelMenuExpanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Model: $aiModel", style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                }
+                DropdownMenu(expanded = modelMenuExpanded, onDismissRequest = { modelMenuExpanded = false }) {
+                    AI_MODEL_CHOICES.forEach { model ->
+                        DropdownMenuItem(
+                            text = { Text(model) },
+                            leadingIcon = { Checkbox(checked = model == aiModel, onCheckedChange = null) },
+                            onClick = {
+                                onPickAiModel(model)
+                                modelMenuExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+            TextButton(
+                onClick = { showQuotaProjectDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (aiQuotaProject.isNullOrBlank()) "Set quota project\u2026" else "Quota project: $aiQuotaProject",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                // The privacy statement, where the feature is configured.
+                text =
+                    "AI sends the note you are editing to Google's Gemini only when you ask. " +
+                        "Tool actions ask before writing.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),

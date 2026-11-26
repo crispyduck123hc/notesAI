@@ -19,6 +19,8 @@ import com.example.notesai.ai.AiSession
 import com.example.notesai.ai.AiSessionInvoker
 import com.example.notesai.ai.GeminiClient
 import com.example.notesai.ai.NoteToolbox
+import com.example.notesai.ai.aiModel
+import com.example.notesai.ai.aiQuotaProject
 import com.example.notesai.auth.AccountInfo
 import com.example.notesai.auth.GitHubAuthManager
 import com.example.notesai.auth.GoogleAuthManager
@@ -318,7 +320,14 @@ private fun AccountNotes(
                 }
             }
         }
-    val gemini = remember(aiHttp, aiAccessToken) { GeminiClient(http = aiHttp, aiAccessToken = aiAccessToken) }
+    val gemini =
+        remember(aiHttp, aiAccessToken) {
+            GeminiClient(
+                http = aiHttp,
+                aiAccessToken = aiAccessToken,
+                quotaProject = { repository.aiQuotaProject() },
+            )
+        }
     val scope = rememberCoroutineScope()
 
     // One value for the sidebar, so it cannot say "syncing" and show an error at the same time.
@@ -417,7 +426,7 @@ private fun AccountNotes(
         aiSession =
             if (!aiNeedsAuthorization()) {
                 AiSessionInvoker { request, noteText, approver ->
-                    AiSession(gemini, NoteToolbox(repository)).run(request, noteText, approver)
+                    AiSession(gemini, NoteToolbox(repository)).run(request, noteText, model = repository.aiModel(), approver = approver)
                 }
             } else {
                 null

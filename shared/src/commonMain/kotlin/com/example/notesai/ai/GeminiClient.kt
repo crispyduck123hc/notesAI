@@ -65,14 +65,13 @@ class GeminiClient(
     private val aiAccessToken: suspend () -> String?,
     /** The user's Cloud project id, when known — the `x-goog-user-project` quota project. */
     private val quotaProject: suspend () -> String? = { null },
-    baseUrl: String = DEFAULT_AI_BASE_URL,
+    private val baseUrl: String = DEFAULT_AI_BASE_URL,
 ) {
-    private val generateUrlFormat = "$baseUrl/v1beta/models/%s:generateContent"
-    private val streamUrlFormat = "$baseUrl/v1beta/models/%s:streamGenerateContent"
+    // Plain templates rather than `String.format`: the format function is JVM-only, and this
+    // code compiles for iOS too (a lesson the iOS compile caught).
+    private fun generateUrl(model: String): String = "$baseUrl/v1beta/models/$model:generateContent"
 
-    private fun generateUrl(model: String) = generateUrlFormat.format(model)
-
-    private fun streamUrl(model: String) = streamUrlFormat.format(model)
+    private fun streamUrl(model: String): String = "$baseUrl/v1beta/models/$model:streamGenerateContent"
 
     /** One prompt, one whole answer. Transient failures (503, 429) are retried with backoff. */
     suspend fun generate(
