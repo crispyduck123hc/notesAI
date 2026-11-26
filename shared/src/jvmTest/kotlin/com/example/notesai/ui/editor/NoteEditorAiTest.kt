@@ -168,4 +168,34 @@ class NoteEditorAiTest {
             waitUntil(timeoutMillis = 5_000) { committed == "the bodysession text" }
             assertFalse(approverCalled)
         }
+
+    @Test
+    fun aChecklistItemLandingMidLineStartsANewLineSoItDraws() =
+        runComposeUiTest {
+            // The real bug: the caret sat at the end of the prose line, the first action item
+            // appended onto it, and the marker only *draws* at line starts — so the note showed
+            // raw square brackets (see the AI Testing Note in the user's own database).
+            var committed: String? = null
+            setContent {
+                NoteEditorPane(
+                    pendingEdit = PendingEdit(),
+                    document =
+                        NoteDocument(
+                            ref = NoteRef.Local(1),
+                            title = "the body",
+                            content = "prose that ends without a newline",
+                        ),
+                    onChange = { text, _ -> committed = text },
+                    streamAi = { _ -> flow { emit("[ ] the first action") } },
+                )
+            }
+
+            // The caret defaults to the end of the text — mid-line.
+            onNodeWithText("Ask AI\u2026").performClick()
+            onNodeWithText("Extract actions").performClick()
+
+            waitUntil(timeoutMillis = 5_000) {
+                committed == "prose that ends without a newline\n[ ] the first action"
+            }
+        }
 }

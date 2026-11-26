@@ -302,7 +302,7 @@ internal fun NotesScreen(
                 },
             streamAi = streamAi,
             aiSession = aiSession,
-            onAiFailed = { state.aiNotice = it },
+            onAiNotice = { state.aiNotice = it },
         )
     }
 

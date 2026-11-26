@@ -82,7 +82,12 @@ class AiSessionTest {
                         .toList()
 
                 assertTrue(events.contains(AiEvent.ToolDone("create_note", approved = true, created = true)))
-                assertEquals("I created the note.", events.filterIsInstance<AiEvent.Text>().joinToString("") { it.chunk })
+                // The model's confirmation after the tool turn is conversation, not note content.
+                assertEquals(
+                    "I created the note.",
+                    events.filterIsInstance<AiEvent.Notice>().joinToString("") { it.message },
+                )
+                assertTrue(events.filterIsInstance<AiEvent.Text>().isEmpty(), "a tool turn's summary never lands in the note")
                 assertEquals(1, repository.allNotesNow().size)
                 assertEquals("Groceries\nmilk", repository.allNotesNow().single().content)
                 assertEquals(2, server.calls)
@@ -106,7 +111,10 @@ class AiSessionTest {
 
                 assertTrue(events.contains(AiEvent.ToolDone("create_note", approved = false, created = null)))
                 assertTrue(repository.allNotesNow().isEmpty(), "the user's refusal is final")
-                assertEquals("Understood, I will not create it.", events.filterIsInstance<AiEvent.Text>().single().chunk)
+                assertEquals(
+                    "Understood, I will not create it.",
+                    events.filterIsInstance<AiEvent.Notice>().single().message,
+                )
             } finally {
                 server.stop()
             }
@@ -126,7 +134,7 @@ class AiSessionTest {
                         .run("make a groceries note", "the body", approver = { true })
                         .toList()
 
-                assertEquals("Done now.", events.filterIsInstance<AiEvent.Text>().single().chunk)
+                assertEquals("Done now.", events.filterIsInstance<AiEvent.Notice>().single().message)
                 assertEquals(1, repository.allNotesNow().size, "the second attempt, with a real folder, created it")
                 assertEquals(3, server.calls)
             } finally {

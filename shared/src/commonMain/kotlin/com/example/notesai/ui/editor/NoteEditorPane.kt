@@ -95,8 +95,8 @@ internal fun NoteEditorPane(
      * session reports text chunks and tool turns. Non-null when the AI grant exists.
      */
     aiSession: AiSessionInvoker? = null,
-    /** Reports a failed AI invocation; the screen shows it the way it shows other notices. */
-    onAiFailed: (String) -> Unit = {},
+    /** Routes AI notices — failures and tool-turn status alike — to the screen's AI dialog. */
+    onAiNotice: (String) -> Unit = {},
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
@@ -140,16 +140,25 @@ internal fun NoteEditorPane(
     // A tool call awaiting the user's click: the model proposes, this dialog decides.
     var pendingTool by remember { mutableStateOf<Pair<GeminiFunctionCall, CompletableDeferred<Boolean>>?>(null) }
 
-    /** Inserts one chunk at [offset], moving the caret to its end; returns the next offset. */
+    /**
+     * Inserts one chunk at [offset], moving the caret to its end; returns the next offset.
+     *
+     * List markers only *draw* at line starts — a `[ ] ` landing mid-line paints as raw
+     * brackets (observed on a real note: the first action item appended onto the prose line).
+     * When the insertion point is mid-line and the chunk begins with a marker, a line break is
+     * added first so the marker renders.
+     */
     fun insertChunk(
         chunk: String,
         offset: Int,
     ): Int {
+        val atLineStart = offset == 0 || state.text[offset - 1] == '\n'
+        val chunkText = if (!atLineStart && parseMarker(chunk, 0) != null) "\n$chunk" else chunk
         state.edit {
-            replace(offset, offset, chunk)
-            selection = TextRange(offset + chunk.length)
+            replace(offset, offset, chunkText)
+            selection = TextRange(offset + chunkText.length)
         }
-        return offset + chunk.length
+        return offset + chunkText.length
     }
 
     /**
@@ -160,6 +169,8 @@ internal fun NoteEditorPane(
     fun startAiSession(request: String) {
         val session = aiSession ?: return
         var offset = state.selection.start.coerceIn(0, state.text.length)
+        // Same guard, same reasoning: the model echoes what it was sent, which is the captured text.
+        val guard = EchoGuard(state.text.toString())
         aiJob =
             paneScope.launch {
                 try {
@@ -174,17 +185,24 @@ internal fun NoteEditorPane(
                             },
                         ).collect { event ->
                             when (event) {
-                                is AiEvent.Text -> offset = insertChunk(event.chunk, offset)
+                                is AiEvent.Text ->
+                                    guard.feed(event.chunk).takeIf { it.isNotEmpty() }?.let { toInsert ->
+                                        offset = insertChunk(toInsert, offset)
+                                    }
+                                is AiEvent.Notice -> onAiNotice(event.message)
                                 is AiEvent.ToolDone -> Unit
                             }
                         }
+                    guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
+                        offset = insertChunk(tail, offset)
+                    }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (
                     @Suppress("TooGenericExceptionCaught")
                     t: Throwable,
                 ) {
-                    onAiFailed("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                    onAiNotice("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
                 } finally {
                     aiJob = null
                 }
@@ -212,20 +230,33 @@ internal fun NoteEditorPane(
                 -1
             }
         var replacing = replaceFirstLine
+        // The guard compares against the note text *captured now* — the field changes as chunks
+        // are inserted, but the model echoes what it was sent.
+        val guard = EchoGuard(state.text.toString())
         aiJob =
             paneScope.launch {
                 try {
                     stream(prompt).collect { chunk ->
-                        state.edit {
-                            if (replacing) {
+                        if (replacing) {
+                            // Title action: the first chunk swaps out the whole first line.
+                            state.edit {
                                 replace(offset, firstLineEnd, chunk)
-                                replacing = false
-                            } else {
-                                replace(offset, offset, chunk)
+                                selection = TextRange(offset + chunk.length)
                             }
                             offset += chunk.length
-                            selection = TextRange(offset)
+                            replacing = false
+                        } else {
+                            // Normal insertion goes through the shared path, so markers that
+                            // land mid-line get their line break and actually draw — and the
+                            // guard holds back an echoing model before it duplicates the note.
+                            guard.feed(chunk).takeIf { it.isNotEmpty() }?.let { toInsert ->
+                                offset = insertChunk(toInsert, offset)
+                            }
                         }
+                    }
+                    // A stream that ends still-held is a pure or partial echo; flush the tail.
+                    guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
+                        offset = insertChunk(tail, offset)
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -234,7 +265,7 @@ internal fun NoteEditorPane(
                     t: Throwable,
                 ) {
                     // What arrived stays: it is ordinary note text now, deletable like any other.
-                    onAiFailed("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
+                    onAiNotice("AI could not finish: ${t.message ?: t}. The inserted text is kept.")
                 } finally {
                     aiJob = null
                 }

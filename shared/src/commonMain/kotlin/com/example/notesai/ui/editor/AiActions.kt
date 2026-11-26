@@ -11,7 +11,6 @@ enum class AiAction(
     val label: String,
 ) {
     SUMMARIZE("Summarize note"),
-    CHECKLIST("Turn into checklist"),
     TITLE("Suggest title"),
     ACTIONS("Extract actions"),
 }
@@ -24,9 +23,6 @@ fun aiActionPrompt(
     val instruction =
         when (action) {
             AiAction.SUMMARIZE -> "Summarize the note in a few sentences."
-            AiAction.CHECKLIST ->
-                "Rewrite the note's content as a checklist, one \"[ ] \" item per task, in the note's own order. " +
-                    "Keep the original wording where it already works."
             AiAction.TITLE -> "Suggest a short title for the note: a few words, no quotes, no trailing period."
             AiAction.ACTIONS ->
                 "Extract the concrete action items the note implies, one per line as \"[ ] \" items. " +

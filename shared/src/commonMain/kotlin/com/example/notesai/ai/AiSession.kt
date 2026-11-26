@@ -20,6 +20,11 @@ internal sealed interface AiEvent {
         val approved: Boolean,
         val created: Boolean?,
     ) : AiEvent
+
+    /** Text that is conversation, not note content — shown to the reader, never inserted. */
+    data class Notice(
+        val message: String,
+    ) : AiEvent
 }
 
 /**
@@ -52,6 +57,10 @@ internal class AiSession(
                     GeminiContent(role = "user", parts = listOf(GeminiPart(text = askAiPrompt(noteText = noteText, request = request)))),
                 )
             var rounds = 0
+            // Once a tool has run, the model's words are conversation ("I have created the note…")
+            // — a real note was created and the model's confirmation must not land in the note's
+            // text, which is exactly the duplication report that motivated this branch.
+            var toolUsed = false
             while (true) {
                 val modelParts = mutableListOf<GeminiPart>()
                 var toolCall: GeminiFunctionCall? = null
@@ -65,7 +74,11 @@ internal class AiSession(
                             }
                             part.text?.isNotEmpty() == true -> {
                                 modelParts += part
-                                emit(AiEvent.Text(part.text))
+                                if (toolUsed) {
+                                    emit(AiEvent.Notice(part.text))
+                                } else {
+                                    emit(AiEvent.Text(part.text))
+                                }
                             }
                         }
                     }
@@ -81,6 +94,7 @@ internal class AiSession(
                     } else {
                         buildJsonObject { put("status", "refused by the user") }
                     }
+                toolUsed = true
                 emit(AiEvent.ToolDone(call.name, approved, (response["created"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()))
 
                 contents +=
