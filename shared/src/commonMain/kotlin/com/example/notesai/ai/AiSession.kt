@@ -49,6 +49,7 @@ internal class AiSession(
     fun run(
         request: String,
         noteText: String,
+        model: String = DEFAULT_AI_MODEL,
         approver: suspend (GeminiFunctionCall) -> Boolean,
     ): Flow<AiEvent> =
         flow {
@@ -65,7 +66,7 @@ internal class AiSession(
                 val modelParts = mutableListOf<GeminiPart>()
                 var toolCall: GeminiFunctionCall? = null
                 client
-                    .streamConversation(contents = contents, tools = toolbox.declarations)
+                    .streamConversation(contents = contents, tools = toolbox.declarations, model = model)
                     .collect { part ->
                         when {
                             part.functionCall != null -> {
@@ -110,7 +111,7 @@ internal class AiSession(
                             parts = listOf(GeminiPart(text = "No more tools are available. Finish the reply as plain text now.")),
                         )
                     client
-                        .streamConversation(contents = contents, tools = null)
+                        .streamConversation(contents = contents, tools = null, model = model)
                         .collect { part -> part.text?.takeIf { it.isNotEmpty() }?.let { emit(AiEvent.Text(it)) } }
                     break
                 }
