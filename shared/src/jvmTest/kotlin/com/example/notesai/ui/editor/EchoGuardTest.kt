@@ -2,6 +2,7 @@ package com.example.notesai.ui.editor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * The guard that keeps an echoing model from duplicating the note into itself.
@@ -78,5 +79,36 @@ class EchoGuardTest {
         val guard = EchoGuard(noteWithBreak)
 
         assertEquals("Summary.", feedInPieces(guard, "$noteWithBreak\nSummary."))
+    }
+
+    @Test
+    fun theContainmentStripCatchesEchoesWithDifferentWhitespace() {
+        // The live failure: other models echo the note with their own whitespace, which the
+        // streaming prefix guard's threshold lets through. The strip removes it anyway.
+        val note = "AI Testing Note\nthis is a note for testing ai feature."
+        val inserted = "$note\n\nSummary: testing."
+        assertEquals("Summary: testing.", stripEchoedNote(inserted, note), "the echo and its boundary blank lines go")
+    }
+
+    @Test
+    fun theContainmentStripCatchesAnEchoAfterAPreamble() {
+        val note = "AI Testing Note\nthis is a note for testing ai feature."
+        val inserted = "Here is the note:\n\n$note\n\nSummary: testing."
+
+        assertEquals("Here is the note:\n\nSummary: testing.", stripEchoedNote(inserted, note))
+    }
+
+    @Test
+    fun theContainmentStripLeavesCleanRepliesAlone() {
+        val note = "AI Testing Note\nthis is a note for testing ai feature."
+
+        assertNull(stripEchoedNote("Summary: testing.", note), "a clean reply is returned untouched (null means: keep as is)")
+        assertEquals(null, stripEchoedNote("", note))
+    }
+
+    @Test
+    fun theContainmentStripIgnoresTinyNotes() {
+        // A two-word note is contained in almost any reply about it.
+        assertNull(stripEchoedNote("the body again", "the body"), "tiny notes are never treated as echoes")
     }
 }
