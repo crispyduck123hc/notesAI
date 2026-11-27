@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.notesai.PendingEdit
 import com.example.notesai.ai.AiEvent
 import com.example.notesai.ai.AiSessionInvoker
@@ -97,6 +99,10 @@ internal fun NoteEditorPane(
     aiSession: AiSessionInvoker? = null,
     /** Routes AI notices — failures and tool-turn status alike — to the screen's AI dialog. */
     onAiNotice: (String) -> Unit = {},
+    /** The reading size, as a scale on the theme's body size; a setting, not a note property. */
+    editorFontScale: Float = 1f,
+    /** Persists a new scale when the user steps the size. */
+    onEditorFontScaleChange: (Float) -> Unit = {},
     /** Null for local notes; issues can be handed to the browser. */
     onOpenOnGitHub: (() -> Unit)? = null,
     /** Opens a link found in the note's text. Null makes links inert, which is what an issue body wants. */
@@ -294,7 +300,10 @@ internal fun NoteEditorPane(
 
     val inputTransformation = remember { editorInputTransformation() }
     val outputTransformation =
-        remember(completion == null) { editorOutputTransformation(if (completion == null) TitleStyle else null) }
+        remember(completion == null, editorFontScale) {
+            val titleStyle = if (completion == null) TitleStyle.copy(fontSize = 24.sp * editorFontScale) else null
+            editorOutputTransformation(titleStyle)
+        }
     val layout = remember(document.ref) { mutableStateOf<TextLayoutResult?>(null) }
 
     // Debounced persistence: emit only after typing pauses for WRITE_DEBOUNCE_MS.
@@ -458,6 +467,29 @@ internal fun NoteEditorPane(
             modifier = Modifier.fillMaxWidth().padding(start = Dimens.EditorPadding),
             verticalArrangement = Arrangement.Center,
         ) {
+            // Reading size. Discrete steps rather than a slider: the field re-lays out (and the
+            // overlay re-places) on every change, so steps keep the churn countable.
+            val currentIndex = EDITOR_FONT_SCALES.indexOf(editorFontScale).coerceAtLeast(0)
+            TextButton(
+                onClick = {
+                    if (currentIndex > 0) onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex - 1])
+                },
+                enabled = currentIndex > 0,
+                modifier = Modifier.testTag("font-size-down"),
+            ) {
+                Text("A\u2212")
+            }
+            TextButton(
+                onClick = {
+                    if (currentIndex < EDITOR_FONT_SCALES.lastIndex) {
+                        onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex + 1])
+                    }
+                },
+                enabled = currentIndex < EDITOR_FONT_SCALES.lastIndex,
+                modifier = Modifier.testTag("font-size-up"),
+            ) {
+                Text("A+")
+            }
             TextButton(
                 onClick = { edit(toggleList(currentValue(), ListKind.BULLET)) },
             ) {
@@ -575,13 +607,13 @@ internal fun NoteEditorPane(
                 // outlined field used to substitute `TextFieldColors.textColor`; without that the text fell back to
                 // the platform default (black), so the note was unreadable in dark mode. The caret had the same
                 // problem -- its default brush is solid black -- and is invisible against a dark background.
-                textStyle = editorTextStyle(MaterialTheme.typography.bodyLarge, MaterialTheme.colorScheme),
+                textStyle = editorTextStyle(MaterialTheme.typography.bodyLarge, MaterialTheme.colorScheme, editorFontScale),
                 cursorBrush = editorCursorBrush(MaterialTheme.colorScheme),
                 scrollState = scrollState,
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .editorLayoutSemantics(layout, state)
+                        .editorLayoutSemantics(layout, state, editorFontScale)
                         // Tab indents and Shift+Tab outdents, instead of moving focus. The field would
                         // otherwise let the key travel to the focus manager, which is why an indent was
                         // impossible to type.
@@ -632,9 +664,13 @@ internal val EditorCaretLineKey = SemanticsPropertyKey<Int>("EditorCaretLine")
 /** The caret's offset in the note, so a test can assert where it is allowed to rest. */
 internal val EditorCaretOffsetKey = SemanticsPropertyKey<Int>("EditorCaretOffset")
 
+/** The editor's reading scale, so tests can assert the size the field is drawing at. */
+internal val EditorFontScaleKey = SemanticsPropertyKey<Float>("EditorFontScale")
+
 private fun Modifier.editorLayoutSemantics(
     layout: androidx.compose.runtime.MutableState<TextLayoutResult?>,
     state: TextFieldState,
+    fontScale: Float,
 ): Modifier {
     val lines = layout.value?.lineCount
     val caretLine = layout.value?.getLineForOffset(state.selection.start.coerceIn(0, state.text.length))
@@ -642,6 +678,7 @@ private fun Modifier.editorLayoutSemantics(
         if (lines != null) this[EditorLineCountKey] = lines
         if (caretLine != null) this[EditorCaretLineKey] = caretLine
         this[EditorCaretOffsetKey] = state.selection.start
+        this[EditorFontScaleKey] = fontScale
     }
 }
 
