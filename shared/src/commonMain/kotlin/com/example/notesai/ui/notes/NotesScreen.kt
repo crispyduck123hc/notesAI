@@ -35,6 +35,8 @@ import com.example.notesai.model.gitHubRepoNodeId
 import com.example.notesai.model.toDocument
 import com.example.notesai.ui.dialogs.ConflictUiItem
 import com.example.notesai.ui.editor.NoteEditorPane
+import com.example.notesai.ui.editor.editorFontScale
+import com.example.notesai.ui.editor.recordEditorFontScale
 import com.example.notesai.ui.openInBrowser
 import com.example.notesai.ui.tree.NoteTreePane
 import com.example.notesai.update.AvailableUpdate
@@ -90,6 +92,8 @@ internal fun NotesScreen(
     var aiEnabled by remember { mutableStateOf(aiEnabled) }
     var aiModel by remember { mutableStateOf(repository.aiModel()) }
     var aiQuotaProject by remember { mutableStateOf(repository.aiQuotaProject()) }
+    // The editor's reading size: a per-account setting, applied live.
+    var editorFontScale by remember { mutableStateOf(repository.editorFontScale()) }
     val screenScope = rememberCoroutineScope()
     // The stream is offered only when the grant exists; the editor owns the buffer it writes into.
     val streamAi =
@@ -319,6 +323,11 @@ internal fun NotesScreen(
             streamAi = streamAi,
             aiSession = aiSession,
             onAiNotice = { state.aiNotice = it },
+            editorFontScale = editorFontScale,
+            onEditorFontScaleChange = { scale ->
+                repository.recordEditorFontScale(scale)
+                editorFontScale = scale
+            },
         )
     }
 

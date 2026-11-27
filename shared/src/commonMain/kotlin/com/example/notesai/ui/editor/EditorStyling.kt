@@ -16,7 +16,8 @@ import androidx.compose.ui.text.TextStyle
 internal fun editorTextStyle(
     base: TextStyle,
     colors: ColorScheme,
-): TextStyle = base.copy(color = colors.onSurface)
+    fontScale: Float = 1f,
+): TextStyle = base.copy(color = colors.onSurface, fontSize = base.fontSize * fontScale)
 
 /**
  * The caret colour. `BasicTextField`'s default brush is solid black, which is invisible on a dark background.
