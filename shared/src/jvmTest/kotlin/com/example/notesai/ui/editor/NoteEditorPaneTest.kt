@@ -10,6 +10,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -142,6 +143,7 @@ class NoteEditorPaneTest {
 
             // Put the caret at the start of the line, then use the toolbar.
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Bullet", substring = true).performClick()
 
             onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + BULLET_MARKER + "shopping"))
@@ -159,7 +161,9 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Bullet", substring = true).performClick()
+            openFormatMenu()
             onNodeWithText("Bullet", substring = true).performClick()
 
             onNode(hasSetTextAction()).assertTextEquals(drawn("shopping"))
@@ -351,6 +355,7 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Dash list", substring = true).performClick()
 
             onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + DASH_MARKER + "shopping"))
@@ -403,6 +408,7 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Numbered list", substring = true).performClick()
 
             onNode(hasSetTextAction()).assertTextEquals(drawn(BULLET_INDENT + NUMBERED_MARKER + "step"))
@@ -456,6 +462,7 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Checklist", substring = true).performClick()
 
             // The indent is drawn as columns and the marker as a circle.
@@ -474,6 +481,7 @@ class NoteEditorPaneTest {
             }
 
             onNode(hasSetTextAction()).performClick()
+            openFormatMenu()
             onNodeWithText("Tick item", substring = true).performClick()
 
             // The note holds "[x] milk"; the field draws a filled circle in front of it.
@@ -688,6 +696,12 @@ class NoteEditorPaneTest {
             )
             assertTrue(seen.contains(14) || seen.contains(4), "it does visit the token's edges, saw $seen")
         }
+
+    /** The editor features live in a Format menu now; every test that uses one opens it first. */
+    private fun ComposeUiTest.openFormatMenu() {
+        onNodeWithTag("format-menu").performClick()
+        waitUntil(timeoutMillis = 5_000) { onAllNodesWithText("\u2022 Bullet list").fetchSemanticsNodes().isNotEmpty() }
+    }
 
     /** The caret position, through the same semantics seam the layout test uses. */
     private fun ComposeUiTest.caretOffset(): Int? = onNode(hasSetTextAction()).fetchSemanticsNode().config.getOrNull(EditorCaretOffsetKey)

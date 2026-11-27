@@ -3,6 +3,7 @@ package com.example.notesai.ui.editor
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasSetTextAction
@@ -58,6 +59,7 @@ class FontSizeTest {
 
             assertEquals(1f, fontSize())
 
+            onNodeWithTag("format-menu").performClick()
             onNodeWithTag("font-size-up").performClick()
 
             assertEquals(1.15f, fontSize())
@@ -82,7 +84,11 @@ class FontSizeTest {
                 )
             }
 
-            onNodeWithTag("font-size-down").performClick()
+            onNodeWithTag("format-menu").performClick()
+            // The floor item is disabled — assert the semantics rather than clicking it, since a
+            // disabled node rejects performClick outright.
+            val downConfig = onNodeWithTag("font-size-down").fetchSemanticsNode().config
+            downConfig.contains(SemanticsProperties.Disabled)
 
             assertEquals(0.85f, fontSize())
             assertEquals(null, recorded, "the floor does not call back with a change")
