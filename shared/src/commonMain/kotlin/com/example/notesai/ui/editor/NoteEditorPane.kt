@@ -145,6 +145,26 @@ internal fun NoteEditorPane(
     var pendingTool by remember { mutableStateOf<Pair<GeminiFunctionCall, CompletableDeferred<Boolean>>?>(null) }
 
     /**
+     * The architectural layer of the echo defence: after the stream ends, the range this run
+     * inserted is known exactly, so a whitespace-normalized containment check can still remove
+     * an echo the streaming guard's threshold let through. One edit, after the fact.
+     */
+    fun correctEchoedNote(
+        insertStart: Int,
+        insertEnd: Int,
+        noteTextAtStart: String,
+    ) {
+        if (insertEnd <= insertStart) return
+        val inserted = state.text.substring(insertStart, insertEnd)
+        stripEchoedNote(inserted, noteTextAtStart)?.let { cleaned ->
+            state.edit {
+                replace(insertStart, insertEnd, cleaned)
+                selection = TextRange(insertStart + cleaned.length)
+            }
+        }
+    }
+
+    /**
      * Inserts one chunk at [offset], moving the caret to its end; returns the next offset.
      *
      * List markers only *draw* at line starts — a `[ ] ` landing mid-line paints as raw
@@ -173,15 +193,17 @@ internal fun NoteEditorPane(
     fun startAiSession(request: String) {
         val session = aiSession ?: return
         var offset = state.selection.start.coerceIn(0, state.text.length)
+        val noteTextAtStart = state.text.toString()
         // Same guard, same reasoning: the model echoes what it was sent, which is the captured text.
-        val guard = EchoGuard(state.text.toString())
+        val guard = EchoGuard(noteTextAtStart)
+        val insertStart = offset
         aiJob =
             paneScope.launch {
                 try {
                     session
                         .run(
                             request = request,
-                            noteText = state.text.toString(),
+                            noteText = noteTextAtStart,
                             approver = { call ->
                                 val deferred = CompletableDeferred<Boolean>()
                                 pendingTool = call to deferred
@@ -200,6 +222,7 @@ internal fun NoteEditorPane(
                     guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
                         offset = insertChunk(tail, offset)
                     }
+                    correctEchoedNote(insertStart, offset, noteTextAtStart)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (
@@ -234,9 +257,11 @@ internal fun NoteEditorPane(
                 -1
             }
         var replacing = replaceFirstLine
+        val noteTextAtStart = state.text.toString()
         // The guard compares against the note text *captured now* — the field changes as chunks
         // are inserted, but the model echoes what it was sent.
-        val guard = EchoGuard(state.text.toString())
+        val guard = EchoGuard(noteTextAtStart)
+        val insertStart = offset
         aiJob =
             paneScope.launch {
                 try {
@@ -262,6 +287,7 @@ internal fun NoteEditorPane(
                     guard.finish().takeIf { it.isNotEmpty() }?.let { tail ->
                         offset = insertChunk(tail, offset)
                     }
+                    correctEchoedNote(insertStart, offset, noteTextAtStart)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (
