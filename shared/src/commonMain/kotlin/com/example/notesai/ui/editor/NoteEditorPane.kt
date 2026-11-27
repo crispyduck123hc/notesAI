@@ -1,9 +1,7 @@
 package com.example.notesai.ui.editor
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -463,63 +461,96 @@ internal fun NoteEditorPane(
         }
 
         // Wraps rather than clipping: there are five list buttons now, and the pane is 280dp wide on a phone.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().padding(start = Dimens.EditorPadding),
-            verticalArrangement = Arrangement.Center,
+        // One Format menu instead of a row of buttons: every editing feature in one dropdown,
+        // with Ask AI kept as its own button beside it — it is a different kind of action (a
+        // network call with a confirmation flow), not a text transform.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = Dimens.EditorPadding, end = Dimens.Gutter),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Reading size. Discrete steps rather than a slider: the field re-lays out (and the
-            // overlay re-places) on every change, so steps keep the churn countable.
-            val currentIndex = EDITOR_FONT_SCALES.indexOf(editorFontScale).coerceAtLeast(0)
-            TextButton(
-                onClick = {
-                    if (currentIndex > 0) onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex - 1])
-                },
-                enabled = currentIndex > 0,
-                modifier = Modifier.testTag("font-size-down"),
-            ) {
-                Text("A\u2212")
-            }
-            TextButton(
-                onClick = {
-                    if (currentIndex < EDITOR_FONT_SCALES.lastIndex) {
-                        onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex + 1])
+            Box {
+                var formatMenuExpanded by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { formatMenuExpanded = true },
+                    modifier = Modifier.testTag("format-menu"),
+                ) {
+                    Text("Format \u25be")
+                }
+                DropdownMenu(expanded = formatMenuExpanded, onDismissRequest = { formatMenuExpanded = false }) {
+                    // Reading size. Discrete steps rather than a slider: the field re-lays out (and
+                    // the overlay re-places) on every change, so steps keep the churn countable.
+                    val currentIndex = EDITOR_FONT_SCALES.indexOf(editorFontScale).coerceAtLeast(0)
+                    DropdownMenuItem(
+                        text = { Text("Smaller text (A\u2212)") },
+                        onClick = {
+                            if (currentIndex > 0) onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex - 1])
+                            formatMenuExpanded = false
+                        },
+                        enabled = currentIndex > 0,
+                        modifier = Modifier.testTag("font-size-down"),
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Larger text (A+)") },
+                        onClick = {
+                            if (currentIndex < EDITOR_FONT_SCALES.lastIndex) {
+                                onEditorFontScaleChange(EDITOR_FONT_SCALES[currentIndex + 1])
+                            }
+                            formatMenuExpanded = false
+                        },
+                        enabled = currentIndex < EDITOR_FONT_SCALES.lastIndex,
+                        modifier = Modifier.testTag("font-size-up"),
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text("\u2022 Bullet list") },
+                        onClick = {
+                            formatMenuExpanded = false
+                            edit(toggleList(currentValue(), ListKind.BULLET))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("\u2013 Dash list") },
+                        onClick = {
+                            formatMenuExpanded = false
+                            edit(toggleList(currentValue(), ListKind.DASH))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("1. Numbered list") },
+                        onClick = {
+                            formatMenuExpanded = false
+                            edit(toggleList(currentValue(), ListKind.NUMBERED))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("\u25CB Checklist") },
+                        onClick = {
+                            formatMenuExpanded = false
+                            edit(toggleList(currentValue(), ListKind.CHECKLIST))
+                        },
+                    )
+                    DropdownMenuItem(
+                        // Apple ticks by tapping the circle; a plain text field cannot tell which character was tapped, so
+                        // the tick is an action on the caret's line — here and on Ctrl+Enter below.
+                        text = { Text("\u2713 Tick item") },
+                        onClick = {
+                            formatMenuExpanded = false
+                            edit(toggleChecklistState(currentValue()))
+                        },
+                    )
+                    if (onLinkNote != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("\u21aa Link note") },
+                            onClick = {
+                                formatMenuExpanded = false
+                                onLinkNote()
+                            },
+                        )
                     }
-                },
-                enabled = currentIndex < EDITOR_FONT_SCALES.lastIndex,
-                modifier = Modifier.testTag("font-size-up"),
-            ) {
-                Text("A+")
+                }
             }
-            TextButton(
-                onClick = { edit(toggleList(currentValue(), ListKind.BULLET)) },
-            ) {
-                Text("\u2022 Bullet list")
-            }
-            TextButton(
-                onClick = { edit(toggleList(currentValue(), ListKind.DASH)) },
-            ) {
-                Text("${DASH_MARKER.trimEnd()} Dash list")
-            }
-            TextButton(
-                onClick = { edit(toggleList(currentValue(), ListKind.NUMBERED)) },
-            ) {
-                Text("${NUMBERED_MARKER.trimEnd()} Numbered list")
-            }
-            TextButton(
-                onClick = { edit(toggleList(currentValue(), ListKind.CHECKLIST)) },
-            ) {
-                Text("\u25CB Checklist")
-            }
-            TextButton(
-                // Apple ticks by tapping the circle; a plain text field cannot tell which character was tapped, so
-                // the tick is an action on the caret's line — here and on Ctrl+Enter below.
-                onClick = { edit(toggleChecklistState(currentValue())) },
-            ) {
-                Text("\u2713 Tick item")
-            }
-            if (onLinkNote != null) {
-                TextButton(onClick = onLinkNote) { Text("\u21aa Link note") }
-            }
+            Spacer(modifier = Modifier.width(Dimens.Gutter))
             // The note's text and the request are what leave the device, only when the user asks —
             // that is the feature's whole privacy statement, stated in the prompt builders. While
             // it streams, the button is the Stop: the stream writes into the field, so the user
